@@ -107,19 +107,30 @@ istruct (VmObjString) { VmObj base; String string; };
 istruct (VmObjArray)  { VmObj base; ArrayVmReg array; };
 istruct (VmObjRecord) { VmObj base; Map(String, VmReg) record; };
 
-istruct (VmBytecode) {
+array_typedef(VmObj*, VmObj);
+
+istruct (CallRecord) {
+    VmFunction *fn;
+    U32 pc;
+    U32 reg_base;
+};
+
+istruct (Vm) {
     Mem *mem;
+
+    Sem *sem;
+    SemProgram *sem_prog;
 
     VmFunction *entry;
     ArrayU8 instructions;
     ArrayVmReg constants;
+    ArrayVmObj gc_objects;
 
-    Sem *sem;
-    SemProgram *sem_prog;
+    ArrayVmReg registers;
+    Array(CallRecord) call_stack;
 };
 
-array_typedef(VmObj*, VmObj);
-
-VmBytecode *vm_emit  (Mem *, String);
-Void        vm_print (VmBytecode *);
-VmReg       vm_run   (Mem *, VmBytecode *);
+Vm   *vm_new      (Mem *);
+Void  vm_set_prog (Vm *, String);
+Void  vm_print    (Vm *);
+Void  vm_run      (Vm *);

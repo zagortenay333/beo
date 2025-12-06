@@ -65,7 +65,8 @@ Int main (Int argc, CString *argv) {
 
     Mem *mem = cast(Mem*, arena_new(mem_root, 1*MB));
 
-    VmBytecode *bc = vm_emit(mem, cli.main_file_path);
-    vm_print(bc);
-    vm_run(mem, bc);
+    Vm *vm = vm_new(mem);
+    vm_set_prog(vm, cli.main_file_path);
+    vm_print(vm);
+    vm_run(vm);
 }

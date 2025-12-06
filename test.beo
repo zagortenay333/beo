@@ -1,5 +1,7 @@
-record Foo { x: Int; };
 fn main {
+    x[0];
+    var x = [1, ];
+
     test_var_defs();
     test_fn_calls();
     test_ifs();
