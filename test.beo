@@ -1,3 +1,4 @@
+record Foo { x: Int; };
 fn main {
     test_var_defs();
     test_fn_calls();
@@ -24,6 +25,13 @@ fn test_var_defs {
 }
 
 fn test_records {
+    // @todo Right now we don't handle the case when initializers
+    // are omitted from record literal:
+    // 
+    //   var x = Foo{};
+    //   x.x; // This has value nil...
+    //
+
     record Foo {
         x: Int;
         y: Float;

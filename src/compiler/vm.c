@@ -975,7 +975,7 @@ static Void run_loop (Vm *vm) {
             assert_always(key_reg->tag == VM_REG_OBJ && key_reg->obj->tag == VM_OBJ_STRING);
 
             Bool found = map_get(&cast(VmObjRecord*, rec_reg->obj)->record, cast(VmObjString*, key_reg->obj)->string, val_reg);
-            assert_always(found); // @todo Hmm...
+            if (! found) rec_reg->tag = VM_REG_NIL;
         } break;
 
         case VM_OP_CONST: {
