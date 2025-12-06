@@ -359,6 +359,8 @@ static Ast *scope_lookup_outside_in (Sem *sem, Scope *scope, IString *key, Ast *
     return target;
 }
 
+// @todo We are not checking for invalid forward references, but implementing
+// this should be postponed until we decide whether to add codegen or not.
 static Ast *scope_lookup_inside_out (Sem *sem, Scope *scope, IString *key, Ast *selector) {
     Bool crossed_fn_scope = false;
 
