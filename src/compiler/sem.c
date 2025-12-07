@@ -147,9 +147,11 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
 static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
     if (node->flags & (AST_VISITED | AST_CAN_EVAL)) return RESULT_OK;
 
-    // When we enter into a function we allow references to local
-    // variables since we are looking to see whether the entire
-    // function can eval.
+    // Local variables cannot be compile-time evaled, but when we
+    // enter into a function during this lookup we need to allow
+    // references to local variables since then we are looking to
+    // see whether the entire function can eval, not just a part
+    // of it.
     if (node->tag == AST_FN) allow_local_var = true;
 
     node->flags |= AST_VISITED;
@@ -417,7 +419,12 @@ static Void error_no_progress (Sem *sem) {
         }
     }
 
-    { // Unkown reason:
+    { // Something couldn't compile-time eval maybe:
+        Ast *n = array_try_get(&sem->eval_list, 0);
+        if (n) { error_n(sem, n, "Could not compile-time eval node."); sem_panic(sem); }
+    }
+
+    { // Unknown reason (compiler error):
         sem_msg(msg, LOG_ERROR);
         astr_push_fmt(msg, "Unable to check the following nodes:\n\n");
         array_iter (n, &sem->check_list) log_node(sem, msg, n);
@@ -836,9 +843,7 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_VAR_DEF: {
         Auto n = cast(AstVarDef*, node);
 
-        if (node->flags & AST_IS_GLOBAL_VAR) {
-            return error_n(sem, node, "Global variables are not supported currently.");
-        } else if (node->flags & AST_IS_LOCAL_VAR) {
+        if ((node->flags & (AST_IS_LOCAL_VAR|AST_IS_GLOBAL_VAR)) && !(node->flags & AST_IS_FN_ARG)) {
             if (! n->init) return error_n(sem, node, "Missing initializer.");
         } else if (n->init) {
             return error_n(sem, node, "Initializer not supported here.");
@@ -853,6 +858,10 @@ static Result check_node (Sem *sem, Ast *node) {
             set_type(node, t);
         } else {
             set_type(node, try_get_type_t(n->constraint));
+        }
+
+        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) {
+            return RESULT_DEFER;
         }
 
         return RESULT_OK;
@@ -1070,6 +1079,7 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     array_init(&sem->fns, mem);
     array_init(&sem->types, mem);
     array_init(&sem->globals, mem);
+    array_init(&sem->eval_list, mem);
     array_init(&sem->check_list, mem);
 
     map_init(&sem->files, mem);

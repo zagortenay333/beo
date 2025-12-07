@@ -1,3 +1,7 @@
+fn foo -> Int { return 42; }
+
+var x = foo();
+
 fn main {
     var arr = String[];
     array.push(arr, "asdf");

@@ -637,17 +637,18 @@ static Ast *parse_statement (Parser *par) {
 }
 
 static Ast *parse_top_statement (Parser *par) {
-    Ast *result = 0;
-
     switch (lex_peek(lex)->tag) {
     case ';':          while (lex_try_eat(lex, ';')); return parse_top_statement(par);
-    case TOKEN_RECORD: result = parse_record(par); break;
-    case TOKEN_FN:     result = parse_fn(par); break;
-    case TOKEN_VAR:    result = parse_var_def(par, true, true); result->flags |= (AST_MUST_EVAL | AST_IS_GLOBAL_VAR); break;
-    default:           return 0;
+    case TOKEN_RECORD: return parse_record(par); break;
+    case TOKEN_FN:     return parse_fn(par); break;
+    case TOKEN_VAR: {
+       Ast *result = parse_var_def(par, true, true);
+       result->flags |= AST_IS_GLOBAL_VAR;
+       if (cast(AstVarDef*, result)->init) cast(AstVarDef*, result)->init->flags |= AST_MUST_EVAL;
+       return result;
     }
-
-    return result;
+    default: return 0;
+    }
 }
 
 AstFile *par_parse_file (Parser *par, IString *filepath) {
