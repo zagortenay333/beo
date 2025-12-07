@@ -263,7 +263,6 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         Auto n = cast(AstCall*, expr);
 
         Bool needs_result_move = (result_reg != em->next_reg - 1);
-
         VmRegOp result = needs_result_move ? reg_push(em) : result_reg;
 
         VmRegOp fn_reg = emit_expression(em, n->lhs, reg_push(em));
@@ -547,6 +546,10 @@ Void vm_set_prog (Vm *vm, String main_file_path) {
     Interns *interns = interns_new(vm->mem, main_file_path);
     vm->sem = sem_new(vm->mem, vm, interns);
     vm->sem_prog = sem_check(vm->sem, main_file_path);
+
+    array_iter (global, vm->sem_prog->globals) {
+        array_push(&vm->globals, sem_get_const_val(vm->sem, global));
+    }
 
     emit_fn_constant(vm, vm->sem_prog->entry);
     vm->entry = array_ref(&vm->constants, 0)->fn;
@@ -1154,7 +1157,6 @@ static VmObjRecord *get_ffi (Vm *vm, String name) {
 Void vm_ffi_new (Vm *vm, String name) {
     VmObj *obj = gc_new_record(vm);
     array_push_lit(&vm->ffi, .name=name, .obj=cast(VmObjRecord*, obj));
-    array_push_lit(&vm->globals, .tag=VM_REG_OBJ, .obj=obj);
 }
 
 Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
