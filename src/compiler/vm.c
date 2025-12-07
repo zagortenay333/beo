@@ -525,7 +525,7 @@ static Void emit_fn_constant (Vm *vm, AstFn *ast) {
 
 Void vm_set_prog (Vm *vm, String main_file_path) {
     Interns *interns = interns_new(vm->mem, main_file_path);
-    vm->sem = sem_new(vm->mem, interns);
+    vm->sem = sem_new(vm->mem, vm, interns);
     vm->sem_prog = sem_check(vm->sem, main_file_path);
 
     emit_fn_constant(vm, vm->sem_prog->entry);

@@ -1,4 +1,5 @@
 #include "compiler/sem.h"
+#include "compiler/vm.h"
 #include "compiler/parser.h"
 
 ienum (Result, U8) {
@@ -16,6 +17,7 @@ istruct (MatchPair) {
 
 istruct (Sem) {
     Mem *mem;
+    Vm *vm;
     Parser *parser;
     Interns *interns;
 
@@ -34,6 +36,8 @@ istruct (Sem) {
     Bool found_a_sem_edge;
 
     struct {
+        Type *type_Top;
+        Type *type_CFn;
         Type *type_Int;
         Type *type_Bool;
         Type *type_Void;
@@ -190,11 +194,17 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
     type->flags |= TYPE_VISITED;
 
     switch (type->tag) {
+    case TYPE_TOP:    astr_push_cstr(astr, "Top"); break;
     case TYPE_BOOL:   astr_push_cstr(astr, "Bool"); break;
     case TYPE_VOID:   astr_push_cstr(astr, "Void"); break;
     case TYPE_FLOAT:  astr_push_cstr(astr, "Float"); break;
     case TYPE_INT:    astr_push_cstr(astr, "Int"); break;
     case TYPE_STRING: astr_push_cstr(astr, "String"); break;
+
+    case TYPE_FFI: {
+        String name = cast(TypeFfi*, type)->name;
+        astr_push_fmt(astr, "ffi<%.*s>", STR(name));
+    } break;
 
     case TYPE_RECORD: {
         IString *name = cast(TypeRecord*, type)->node->name;
@@ -479,6 +489,7 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
 static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2) {
     if (!t1 || !t2) return RESULT_DEFER;
     if (t1 == t2)   return RESULT_OK;
+    if (t1->tag == TYPE_TOP || t2->tag == TYPE_TOP) return RESULT_OK;
 
     Ast *n1 = *pn1;
     Ast *n2 = *pn2;
@@ -634,12 +645,17 @@ static Result check_node (Sem *sem, Ast *node) {
         Auto n = cast(AstCall*, node);
         Type *t = try_get_type(n->lhs);
 
-        if (t->tag != TYPE_FN) return error_nt(sem, n->lhs, t, "expected function or poly-struct type.");
-        try_get_type_v(n->lhs); // Assert it's a value.
+        if (t == sem->core_types.type_CFn) {
+            set_type(node, sem->core_types.type_Top);
+            return RESULT_OK;
+        } else {
+            if (t->tag != TYPE_FN) return error_nt(sem, n->lhs, t, "expected function.");
+            try_get_type_v(n->lhs); // Assert it's a value.
 
-        AstBaseFn *fn = cast(TypeFn*, t)->node;
-        set_type(node, fn->output ? try_get_type(fn->output) : sem->core_types.type_Void);
-        return check_call(sem, cast(Ast*, fn), &fn->inputs, node, &n->args);
+            AstBaseFn *fn = cast(TypeFn*, t)->node;
+            set_type(node, fn->output ? try_get_type(fn->output) : sem->core_types.type_Void);
+            return check_call(sem, cast(Ast*, fn), &fn->inputs, node, &n->args);
+        }
     }
 
     case AST_RECORD: {
@@ -687,18 +703,26 @@ static Result check_node (Sem *sem, Ast *node) {
         Auto n = cast(AstDot*, node);
         Type *t = try_get_type(n->lhs);
 
-        try_get_type_v(n->lhs); // Assert it's a value.
-        if (t->tag != TYPE_RECORD) return error_n(sem, n->lhs, "Invalid lhs for dot operator.");
+        if (t->tag == TYPE_FFI) {
+            TypeFfi *ffi = cast(TypeFfi*, t);
+            VmReg reg; Bool found = map_get(&ffi->obj->record, *n->rhs, &reg);
+            if (! found) return error_n(sem, node, "Reference to undeclared ffi function.");
+            set_type(node, sem->core_types.type_CFn);
+            return RESULT_OK;
+        } else {
+            if (t->tag != TYPE_RECORD) return error_n(sem, n->lhs, "Invalid lhs for dot operator.");
+            try_get_type_v(n->lhs); // Assert it's a value.
 
-        Ast *c = cast(Ast*, cast(TypeRecord*, t)->node);
-        Ast *d = scope_lookup_outside_in(sem, get_scope(c), n->rhs, node);
+            Ast *c = cast(Ast*, cast(TypeRecord*, t)->node);
+            Ast *d = scope_lookup_outside_in(sem, get_scope(c), n->rhs, node);
 
-        if (! d) return RESULT_DEFER;
+            if (! d) return RESULT_DEFER;
 
-        Type *dt = try_get_type(d);
-        node->flags |= AST_IS_LVALUE | (d->flags & AST_IS_TYPE);
-        set_type(node, dt);
-        return RESULT_OK;
+            Type *dt = try_get_type(d);
+            node->flags |= AST_IS_LVALUE | (d->flags & AST_IS_TYPE);
+            set_type(node, dt);
+            return RESULT_OK;
+        }
     }
 
     case AST_ARRAY_LITERAL: {
@@ -969,9 +993,10 @@ SemProgram *sem_check (Sem *sem, String main_file_path) {
     return prog;
 }
 
-Sem *sem_new (Mem *mem, Interns *interns) {
+Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     Sem *sem = mem_new(mem, Sem);
     sem->mem = mem;
+    sem->vm = vm;
     sem->interns = interns;
     sem->parser = par_new(mem, interns);
 
@@ -1004,6 +1029,8 @@ Sem *sem_new (Mem *mem, Interns *interns) {
             scope_add(sem, sem->autoimports, intern_cstr(sem->interns, #N), n, n);\
         }
 
+        init(CFn, TYPE_FN);
+        init(Top, TYPE_TOP);
         init(Int, TYPE_INT);
         init(Bool, TYPE_BOOL);
         init(Void, TYPE_VOID);
@@ -1011,6 +1038,17 @@ Sem *sem_new (Mem *mem, Interns *interns) {
         init(String, TYPE_STRING);
 
         #undef init
+    }
+
+    { // Add ffi functions to the autoimports scope:
+        array_iter (it, &vm->ffi, *) {
+            Type *t = alloc_type(sem, TYPE_FFI);
+            cast(TypeFfi*, t)->obj = it->obj;
+            Ast *n = ast_alloc(sem->mem, AST_DUMMY, 0);
+            add_to_check_list(sem, n, sem->autoimports);
+            set_type(n, t);
+            scope_add(sem, sem->autoimports, intern_str(sem->interns, it->name), n, n);
+        }
     }
 
     return sem;
