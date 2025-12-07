@@ -368,7 +368,7 @@ static Ast *scope_lookup_inside_out (Sem *sem, Scope *scope, IString *key, Ast *
         Ast *target = map_get_ptr(&scope->map, key);
 
         if (target) {
-            if (crossed_fn_scope && (target->flags & AST_IS_LOCAL_VAR) && (scope->owner->tag != AST_FILE) && (scope != sem->autoimports)) {
+            if (crossed_fn_scope && (target->flags & AST_IS_LOCAL_VAR)) {
                 error_nn(sem, selector, target, "Invalid reference to target in enclosing function.");
                 return 0;
             }

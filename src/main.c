@@ -55,6 +55,16 @@ static CmdLine cli_parse (Int argc, CString *argv) {
     return cli;
 }
 
+static Int print1 (Vm *vm, SliceVmReg args) {
+    array_iter_from (arg, &args, 2, *) printf("====== %li\n", arg->i64);
+    return 0;
+}
+
+static Int print2 (Vm *vm, SliceVmReg args) {
+    array_iter_from (arg, &args, 2, *) printf("-------- %li\n", arg->i64);
+    return 0;
+}
+
 Int main (Int argc, CString *argv) {
     random_setup();
     tmem_setup(mem_root, 1*MB);
@@ -66,6 +76,13 @@ Int main (Int argc, CString *argv) {
     Mem *mem = cast(Mem*, arena_new(mem_root, 1*MB));
 
     Vm *vm = vm_new(mem);
+
+    vm_ffi_new(vm, str("foo"));
+    vm_ffi_add(vm, str("foo"), str("print1"), print1);
+
+    vm_ffi_new(vm, str("bar"));
+    vm_ffi_add(vm, str("bar"), str("print2"), print2);
+
     vm_set_prog(vm, cli.main_file_path);
     vm_print(vm);
     vm_run(vm);

@@ -1027,6 +1027,7 @@ Vm *vm_new (Mem *mem) {
     Auto vm = mem_new(mem, Vm);
     vm->mem = mem;
 
+    array_init(&vm->ffi, mem);
     array_init(&vm->registers, mem);
     array_init(&vm->constants, mem);
     array_init(&vm->gc_objects, mem);
@@ -1043,4 +1044,26 @@ Vm *vm_new (Mem *mem) {
 Void vm_run (Vm *vm) {
     fn_call(vm, vm->entry, 0);
     run_loop(vm);
+}
+
+VmObjRecord *get_ffi (Vm *vm, String name) {
+    array_iter (it, &vm->ffi, *) {
+        if (str_match(it->name, name)) {
+            assert_dbg(it->obj->tag == VM_OBJ_RECORD);
+            return cast(VmObjRecord*, it->obj);
+        }
+    }
+
+    return 0;
+}
+
+Void vm_ffi_new (Vm *vm, String name) {
+    VmObj *obj = gc_new_record(vm);
+    array_push_lit(&vm->ffi, .name=name, .obj=obj);
+}
+
+Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
+    VmObjRecord *obj = get_ffi(vm, ffi_name);
+    VmReg reg = { .tag=VM_REG_CFN, .cfn=fn };
+    map_add(&obj->record, name, reg);
 }

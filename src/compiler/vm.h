@@ -9,6 +9,8 @@
 istruct (Sem);
 istruct (AstFn);
 istruct (SemProgram);
+istruct (Vm);
+istruct (VmObj);
 
 #define EACH_VM_OP(X)\
     X(VM_OP_ADD)\
@@ -75,12 +77,12 @@ ienum (VmRegTag, U8) {
     VM_REG_BOOL,
     VM_REG_FLOAT,
     VM_REG_FN,
+    VM_REG_CFN,
     VM_REG_INT,
     VM_REG_OBJ,
 };
 
 typedef U8 VmRegOp;
-istruct (VmObj);
 
 istruct (VmReg) {
     VmRegTag tag;
@@ -90,11 +92,13 @@ istruct (VmReg) {
         F64 f64;
         Bool boolean;
         VmFunction *fn;
+        Void *cfn; // Cast to VmCFunction.
         VmObj *obj;
     };
 };
 
 array_typedef(VmReg, VmReg);
+typedef Int (*VmCFunction)(Vm *, SliceVmReg);
 
 ienum (VmObjTag, U8) {
     VM_OBJ_ARRAY,
@@ -125,6 +129,7 @@ istruct (Vm) {
     ArrayU8 instructions;
     ArrayVmReg constants;
     ArrayVmObj gc_objects;
+    Array(struct { String name; VmObj *obj; }) ffi;
 
     ArrayVmReg registers;
     Array(CallRecord) call_stack;
@@ -134,3 +139,5 @@ Vm   *vm_new      (Mem *);
 Void  vm_set_prog (Vm *, String);
 Void  vm_print    (Vm *);
 Void  vm_run      (Vm *);
+Void  vm_ffi_new  (Vm *, String);
+Void  vm_ffi_add  (Vm *, String, String, VmCFunction);
