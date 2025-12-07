@@ -22,7 +22,7 @@ istruct (Emitter) {
     Array(ContinuePatch) continue_patches;
 };
 
-VmObjRecord *get_ffi (Vm *vm, String name);
+static VmObjRecord *get_ffi (Vm *vm, String name);
 static VmRegOp emit_expression (Emitter *em, Ast *expr, I32);
 static Void print_reg (Vm *vm ,VmReg *reg, Bool runtime, Bool newline);
 
@@ -635,6 +635,8 @@ static VmReg *get_reg (Vm *vm, CallRecord *cr, VmRegOp op) {
 }
 
 static Void gc_run (Vm *vm) {
+    if (vm->call_stack.count == 0) return;
+
     tmem_new(tm);
 
     //
@@ -645,9 +647,12 @@ static Void gc_run (Vm *vm) {
 
     { // Collect the roots:
         U64 stop_at = array_ref_last(&vm->call_stack)->reg_base + 256;
-
         array_iter (reg, &vm->registers, *) {
             if (ARRAY_IDX == stop_at) break;
+            if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
+        }
+
+        array_iter (reg, &vm->globals, *) {
             if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
         }
     }
@@ -713,7 +718,7 @@ static Void gc_run (Vm *vm) {
 }
 
 static VmObj *gc_new_string (Vm *vm, U64 count) {
-    gc_run(vm);
+    gc_run(vm); // @todo Don't call the gc everytime...
     Auto obj = mem_new(mem_root, VmObjString);
     obj->base.tag = VM_OBJ_STRING;
     obj->string.data = mem_alloc(mem_root, Char, .size=count);
@@ -1064,7 +1069,7 @@ Void vm_run (Vm *vm) {
     run_loop(vm);
 }
 
-VmObjRecord *get_ffi (Vm *vm, String name) {
+static VmObjRecord *get_ffi (Vm *vm, String name) {
     array_iter (it, &vm->ffi, *) {
         if (str_match(it->name, name)) {
             return it->obj;
@@ -1077,6 +1082,7 @@ VmObjRecord *get_ffi (Vm *vm, String name) {
 Void vm_ffi_new (Vm *vm, String name) {
     VmObj *obj = gc_new_record(vm);
     array_push_lit(&vm->ffi, .name=name, .obj=cast(VmObjRecord*, obj));
+    array_push_lit(&vm->globals, .tag=VM_REG_OBJ, .obj=obj);
 }
 
 Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
