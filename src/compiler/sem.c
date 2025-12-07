@@ -183,15 +183,7 @@ static Void ast_eval (Sem *sem, Ast *node) {
 
 static Result eval (Sem *sem, Ast *node) {
     try(can_eval(sem, node, false));
-
-    if (! (node->flags & AST_CAN_EVAL_WITHOUT_VM)) {
-        sem_msg(msg, LOG_ERROR);
-        astr_push_cstr(msg, "You need to implement the VM to eval this.\n\n");
-        sem_print_node(sem, msg, node);
-        sem_panic(sem);
-    }
-
-    ast_eval(sem, node);
+    // ast_eval(sem, node);
     return RESULT_OK;
 }
 
