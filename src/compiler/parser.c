@@ -228,7 +228,7 @@ static Ast *parse_array_literal_or_type (Parser *par) {
 }
 
 static Ast *parse_array_literal_or_index (Parser *par, Ast *lhs) {
-    SrcPos start = lex_peek(lex)->pos;
+    SrcPos start = lhs->pos;
     lex_eat_this(lex, '[');
     Ast *expr = try_parse_expression(par, 0);
     Bool has_comma = lex_try_eat(lex, ',');

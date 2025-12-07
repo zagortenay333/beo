@@ -1,8 +1,8 @@
 fn main {
-    var arr = Int[];
-    array.push(arr, 2);
-    array.push(arr, 3);
-    .print(arr);
+    var arr = String[];
+    array.push(arr, "asdf");
+    var y : String = arr[0];
+    .print(y);
 }
 
 /*
