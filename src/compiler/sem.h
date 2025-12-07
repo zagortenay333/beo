@@ -3,11 +3,10 @@
 #include "base/core.h"
 #include "base/mem.h"
 #include "compiler/ast.h"
+#include "compiler/vm.h"
 #include "compiler/interns.h"
 
-istruct (Vm);
 istruct (Sem);
-istruct (VmObjRecord);
 
 // X(TypeTag, typedef, TypeFlags)
 #define EACH_TYPE(X)\
@@ -50,6 +49,16 @@ istruct (TypeVoid)    { Type type; };
 
 array_typedef(Type*, Type);
 
+istruct (SemCoreTypes) {
+    Type *type_Top;
+    Type *type_CFn;
+    Type *type_Int;
+    Type *type_Bool;
+    Type *type_Void;
+    Type *type_Float;
+    Type *type_String;
+};
+
 istruct (SemProgram) {
     Sem *sem;
     AstFn *entry;
@@ -70,7 +79,9 @@ istruct (Scope) {
 
 #define sem_get_type(SEM, NODE) ((NODE)->sem_type)
 
-Sem        *sem_new            (Mem *, Vm *, Interns *);
-SemProgram *sem_check          (Sem *, String);
-Void        sem_print_node     (Sem *, AString *, Ast *);
-Void        sem_print_node_out (Sem *, Ast *);
+Sem          *sem_new            (Mem *, Vm *, Interns *);
+SemProgram   *sem_check          (Sem *, String);
+Void          sem_print_node     (Sem *, AString *, Ast *);
+Void          sem_print_node_out (Sem *, Ast *);
+VmReg         sem_get_const_val  (Sem *, Ast *);
+SemCoreTypes *sem_get_core_types (Sem *);

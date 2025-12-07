@@ -1,5 +1,10 @@
 fn main {
     foo.print1(1, 2, 3, 4);
+}
+
+/*
+fn main {
+    foo.print1(1, 2, 3, 4);
     bar.print2(1, 2, 3, 4);
 
     test_var_defs();
@@ -596,3 +601,4 @@ fn register_stress_test2 () {
     var x252 = 1;
     [1, 33];
 }
+*/

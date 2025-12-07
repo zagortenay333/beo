@@ -1,5 +1,6 @@
 #include "compiler/vm.h"
 #include "compiler/ast.h"
+#include "compiler/sem.h"
 #include "compiler/interns.h"
 
 istruct (ContinuePatch) {
@@ -134,7 +135,7 @@ static Void emit_const (Emitter *em, VmRegOp result, VmReg val) {
     U32 idx = em->vm->constants.count;
     assert_always(idx < UINT32_MAX); // @todo Better error message.
     array_push(&em->vm->constants, val);
-    array_push_n(&em->vm->instructions, VM_OP_CONST, result, ENCODE_U32(idx));
+    array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result, ENCODE_U32(idx));
 }
 
 // @todo We need to deduplicate strings...
@@ -268,7 +269,14 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         VmRegOp fn_reg = emit_expression(em, n->lhs, reg_push(em));
         array_iter (arg, &n->args) emit_expression(em, arg, reg_push(em));
 
-        array_push_n(&em->vm->instructions, VM_OP_CALL, fn_reg);
+        SemCoreTypes *core_types = sem_get_core_types(em->vm->sem);
+
+        if (sem_get_type(em->vm->sem, n->lhs) == core_types->type_CFn) {
+            assert_always(n->args.count <= 254);
+            array_push_n(&em->vm->instructions, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, n->args.count));
+        } else {
+            array_push_n(&em->vm->instructions, VM_OP_CALL, fn_reg);
+        }
 
         if (needs_result_move) {
             emit_move(em, result_reg, result);
@@ -282,7 +290,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
     case AST_FN: {
         U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, expr));
-        array_push_n(&em->vm->instructions, VM_OP_CONST, result_reg, ENCODE_U32(fn_idx));
+        array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
     } break;
 
     case AST_IDENT: {
@@ -291,7 +299,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         if (def->tag == AST_FN) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
-            array_push_n(&em->vm->instructions, VM_OP_CONST, result_reg, ENCODE_U32(fn_idx));
+            array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
         } else if (def->flags & (AST_IS_FN_ARG|AST_IS_LOCAL_VAR)) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
             assert_always(found);
@@ -303,7 +311,17 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
                 emit_move(em, result_reg, reg);
             }
         } else if (def->flags & AST_IS_GLOBAL_VAR) {
+            I64 global_idx = -1;
 
+            array_iter (global, em->vm->sem_prog->globals) {
+                if (global == def) {
+                    global_idx = ARRAY_IDX;
+                    break;
+                }
+            }
+
+            assert_always(global_idx > -1 && global_idx <= UINT32_MAX);
+            array_push_n(&em->vm->instructions, VM_OP_GLOBAL_GET, result_reg, ENCODE_U32(global_idx));
         } else {
             badpath;
         }
@@ -582,6 +600,7 @@ Void vm_print (Vm *vm) {
             case VM_OP_NOT:           print_unary_op("-"); break;
             case VM_OP_NEGATE:        print_unary_op("!"); break;
             case VM_OP_CALL:          printf("r%u = call r%i\n", cur[1]-1, cur[1]); cur += 2; break;
+            case VM_OP_CALL_FFI:      printf("r%u = call_ffi r%i\n", cur[1]-1, cur[1]); cur += 3; break;
             case VM_OP_NOP:           printf("nop\n"); cur++; break;
             case VM_OP_JUMP:          printf("jump %u\n", read_u32(&cur[1])); cur += 5; break;
             case VM_OP_JUMP_IF_FALSE: printf("jump_if_false %u r%u\n", read_u32(&cur[1]), cur[5]); cur += 6;  break;
@@ -596,7 +615,20 @@ Void vm_print (Vm *vm) {
             case VM_OP_RECORD_NEW:    printf("r%u = record_new\n", cur[1]); cur += 2; break;
             case VM_OP_RECORD_SET:    printf("record_set r%u r%u r%u\n", cur[1], cur[2], cur[3]); cur += 4; break;
             case VM_OP_RECORD_GET:    printf("r%u = record_get r%u r%u\n", cur[3], cur[1], cur[2]); cur += 4; break;
-            case VM_OP_CONST: {
+
+            case VM_OP_GLOBAL_SET:
+            case VM_OP_GLOBAL_GET: {
+                VmRegOp reg = cur[1];
+                U32 global_idx = read_u32(&cur[2]);
+                cur += 6;
+                if (*cur == VM_OP_GLOBAL_SET) {
+                    printf("global<%u> = r%u\n", global_idx, reg);
+                } else {
+                    printf("r%i = global<%u>\n", reg, global_idx);
+                }
+            } break;
+
+            case VM_OP_CONST_GET: {
                 VmRegOp result_reg = cur[1];
                 U32 val_idx = read_u32(&cur[2]);
                 VmReg *val = array_ref(&vm->constants, val_idx);
@@ -982,7 +1014,25 @@ static Void run_loop (Vm *vm) {
             if (! found) rec_reg->tag = VM_REG_NIL;
         } break;
 
-        case VM_OP_CONST: {
+        case VM_OP_GLOBAL_SET: {
+            cr->pc += 6;
+
+            VmReg *val = get_reg(vm, cr, pc[1]);
+            U32 glob_idx = read_u32(&pc[2]);
+
+            array_set(&vm->globals, glob_idx, *val);
+        } break;
+
+        case VM_OP_GLOBAL_GET: {
+            cr->pc += 6;
+
+            VmReg *out = get_reg(vm, cr, pc[1]);
+            U32 glob_idx = read_u32(&pc[2]);
+
+            *out = array_get(&vm->globals, glob_idx);
+        } break;
+
+        case VM_OP_CONST_GET: {
             cr->pc += 6;
 
             VmReg *out  = get_reg(vm, cr, pc[1]);
@@ -1008,6 +1058,24 @@ static Void run_loop (Vm *vm) {
 
             fn_call(vm, arg_reg->fn, cr->reg_base + arg - 1);
             cr = array_ref_last(&vm->call_stack);
+        } break;
+
+        case VM_OP_CALL_FFI: {
+            cr->pc += 3;
+
+            VmRegOp arg  = pc[1];
+            U8 arg_count = pc[2];
+            VmReg *arg_reg = get_reg(vm, cr, arg);
+
+            assert_always(arg > 0);
+            assert_always(arg_reg->tag == VM_REG_CFN);
+
+            SliceVmReg arg_slice;
+            arg_slice.data = array_ref(&vm->registers, cr->reg_base + arg - 1);
+            arg_slice.count = arg_count;
+
+            Auto fn = cast(VmCFunction, arg_reg->cfn);
+            fn(vm, arg_slice);
         } break;
 
         case VM_OP_RETURN: {
@@ -1060,7 +1128,6 @@ Vm *vm_new (Mem *mem) {
     array_init(&vm->gc_objects, mem);
     array_init(&vm->call_stack, mem);
     array_init(&vm->instructions, mem);
-    map_init(&vm->ast_to_global, mem);
 
     // @todo Perhaps a better way would be for fn_call/fn_return
     // to dynamically adjust this array.

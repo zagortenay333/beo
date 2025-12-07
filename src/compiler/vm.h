@@ -5,8 +5,9 @@
 #include "base/map.h"
 #include "base/array.h"
 #include "base/string.h"
-#include "compiler/sem.h"
 
+istruct (Sem);
+istruct (SemProgram);
 istruct (AstFn);
 istruct (Vm);
 istruct (VmObj);
@@ -18,9 +19,12 @@ istruct (VmObj);
     X(VM_OP_ARRAY_PUSH)\
     X(VM_OP_ARRAY_SET)\
     X(VM_OP_CALL)\
-    X(VM_OP_CONST)\
+    X(VM_OP_CALL_FFI)\
+    X(VM_OP_CONST_GET)\
     X(VM_OP_DIV)\
     X(VM_OP_EQUAL)\
+    X(VM_OP_GLOBAL_GET)\
+    X(VM_OP_GLOBAL_SET)\
     X(VM_OP_GREATER)\
     X(VM_OP_GREATER_EQUAL)\
     X(VM_OP_JUMP)\
