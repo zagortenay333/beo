@@ -621,11 +621,10 @@ static Ast *parse_top_statement (Parser *par) {
     case ';':          while (lex_try_eat(lex, ';')); return parse_top_statement(par);
     case TOKEN_RECORD: result = parse_record(par); break;
     case TOKEN_FN:     result = parse_fn(par); break;
-    case TOKEN_VAR:    result = parse_var_def(par, true, true); result->flags |= AST_MUST_EVAL; break;
+    case TOKEN_VAR:    result = parse_var_def(par, true, true); result->flags |= (AST_MUST_EVAL | AST_IS_GLOBAL_VAR); break;
     default:           return 0;
     }
 
-    result->flags |= AST_IS_GLOBAL;
     return result;
 }
 

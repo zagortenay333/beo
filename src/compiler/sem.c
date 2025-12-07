@@ -24,7 +24,7 @@ istruct (Sem) {
     AstFn *main_fn;
     ArrayAstFn fns;
     ArrayType types;
-    ArrayAstVarDef globals;
+    ArrayAst globals;
 
     Scope *autoimports;
     Map(IString*, AstFile*) files;
@@ -775,7 +775,7 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_VAR_DEF: {
         Auto n = cast(AstVarDef*, node);
 
-        if (node->flags & AST_IS_GLOBAL) {
+        if (node->flags & AST_IS_GLOBAL_VAR) {
             return error_n(sem, node, "Global variables are not supported currently.");
         } else if (node->flags & AST_IS_LOCAL_VAR) {
             if (! n->init) return error_n(sem, node, "Missing initializer.");
@@ -935,7 +935,7 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
     }
 
     if (n->tag == AST_FN) array_push(&sem->fns, cast(AstFn*, n));
-    if (n->tag == AST_VAR_DEF && n->flags & AST_IS_GLOBAL) array_push(&sem->globals, cast(AstVarDef*, n));
+    if (n->flags & AST_IS_GLOBAL_VAR) array_push(&sem->globals, n);
     if (n->flags & AST_CREATES_SCOPE) scope = scope_new(sem, scope, n);
 
     #define ADD_TO_CHECK_LIST(child, ...) add_to_check_list(sem, child, scope);
@@ -1044,7 +1044,7 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
         array_iter (it, &vm->ffi, *) {
             Type *t = alloc_type(sem, TYPE_FFI);
             cast(TypeFfi*, t)->obj = it->obj;
-            Ast *n = ast_alloc(sem->mem, AST_DUMMY, 0);
+            Ast *n = ast_alloc(sem->mem, AST_DUMMY, AST_IS_GLOBAL_VAR);
             add_to_check_list(sem, n, sem->autoimports);
             set_type(n, t);
             scope_add(sem, sem->autoimports, intern_str(sem->interns, it->name), n, n);

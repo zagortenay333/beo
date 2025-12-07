@@ -98,7 +98,7 @@ fenum (AstFlags, U64) {
     AST_CHECKED             = flag(1),
     AST_CREATES_SCOPE       = flag(2),
     AST_CREATES_TYPE        = flag(3),
-    AST_IS_GLOBAL           = flag(4),
+    AST_IS_GLOBAL_VAR       = flag(4),
     AST_IS_LITERAL          = flag(5),
     AST_IS_LVALUE           = flag(6),
     AST_IS_TYPE             = flag(7),

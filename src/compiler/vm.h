@@ -5,10 +5,9 @@
 #include "base/map.h"
 #include "base/array.h"
 #include "base/string.h"
+#include "compiler/sem.h"
 
-istruct (Sem);
 istruct (AstFn);
-istruct (SemProgram);
 istruct (Vm);
 istruct (VmObj);
 

@@ -55,7 +55,7 @@ istruct (SemProgram) {
     AstFn *entry;
     ArrayAstFn *fns;
     ArrayType *types;
-    ArrayAstVarDef *globals;
+    ArrayAst *globals;
 };
 
 istruct (Scope) {

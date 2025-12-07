@@ -1,5 +1,5 @@
 #include "compiler/vm.h"
-#include "compiler/sem.h"
+#include "compiler/ast.h"
 #include "compiler/interns.h"
 
 istruct (ContinuePatch) {
@@ -292,7 +292,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         if (def->tag == AST_FN) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
             array_push_n(&em->vm->instructions, VM_OP_CONST, result_reg, ENCODE_U32(fn_idx));
-        } else if ((def->tag == AST_VAR_DEF) && !(def->flags & AST_IS_GLOBAL)) {
+        } else if (def->flags & (AST_IS_FN_ARG|AST_IS_LOCAL_VAR)) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
             assert_always(found);
 
@@ -302,8 +302,10 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             } else {
                 emit_move(em, result_reg, reg);
             }
+        } else if (def->flags & AST_IS_GLOBAL_VAR) {
+
         } else {
-            badpath; // @todo globals
+            badpath;
         }
     } break;
 
@@ -368,7 +370,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         })
 
         if (n->op1->tag == AST_IDENT) {
-            if (n->op1->flags & AST_IS_GLOBAL) {
+            if (n->op1->flags & AST_IS_GLOBAL_VAR) {
                 badpath; // @todo
             } else {
                 Ast *def = cast(AstIdent*, n->op1)->sem_edge;
@@ -753,6 +755,8 @@ static Void print_call_stack (Vm *vm) {
     }
 }
 
+// @todo A lot of the assert_always() should be turned into proper
+// error messages. Especially the asserts on types.
 static Void run_loop (Vm *vm) {
     assert_dbg(vm->call_stack.count);
 
@@ -1056,6 +1060,7 @@ Vm *vm_new (Mem *mem) {
     array_init(&vm->gc_objects, mem);
     array_init(&vm->call_stack, mem);
     array_init(&vm->instructions, mem);
+    map_init(&vm->ast_to_global, mem);
 
     // @todo Perhaps a better way would be for fn_call/fn_return
     // to dynamically adjust this array.
