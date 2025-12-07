@@ -57,11 +57,17 @@ static CmdLine cli_parse (Int argc, CString *argv) {
 
 static Int print1 (Vm *vm, SliceVmReg args) {
     array_iter_from (arg, &args, 2, *) printf("====== %li\n", arg->i64);
+    VmReg *result = array_ref(&args, 0);
+    result->tag = VM_REG_INT;
+    result->i64 = args.count - 2;
     return 0;
 }
 
 static Int print2 (Vm *vm, SliceVmReg args) {
     array_iter_from (arg, &args, 2, *) printf("-------- %li\n", arg->i64);
+    VmReg *result = array_ref(&args, 0);
+    result->tag = VM_REG_INT;
+    result->i64 = args.count - 2;
     return 0;
 }
 
