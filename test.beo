@@ -1,5 +1,5 @@
 fn main {
-    var arr = [1];
+    var arr = Int[];
     array.push(arr, 2);
     array.push(arr, 3);
     .print(arr);

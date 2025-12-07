@@ -228,17 +228,24 @@ static Ast *parse_array_literal_or_type (Parser *par) {
 }
 
 static Ast *parse_array_literal_or_index (Parser *par, Ast *lhs) {
-    if (lex_try_peek(lex, '[') && lex_try_peek_nth(lex, 2, ']')) {
+    SrcPos start = lex_peek(lex)->pos;
+    lex_eat_this(lex, '[');
+    Ast *expr = try_parse_expression(par, 0);
+    Bool has_comma = lex_try_eat(lex, ',');
+
+    if (!expr || has_comma) {
         Auto node = make_node_lhs(par, AstArrayLiteral, lhs);
+        cast(Ast*, node)->pos = start;
         node->lhs = lhs;
-        lex_eat_this(lex, '[');
+        if (expr) array_push(&node->inits, expr);
+        try_parse_expression_list(par, &node->inits);
         lex_eat_this(lex, ']');
         return complete_node(par, node);
     } else {
         Auto node = make_node_lhs(par, AstIndex, lhs);
+        cast(Ast*, node)->pos = start;
         node->lhs = lhs;
-        lex_eat_this(lex, '[');
-        node->idx = parse_expression(par, 0);
+        node->idx = expr;
         lex_eat_this(lex, ']');
         return complete_node(par, node);
     }
