@@ -1082,7 +1082,7 @@ static VmObjRecord *get_ffi (Vm *vm, String name) {
 Void vm_ffi_new (Vm *vm, String name) {
     VmObj *obj = gc_new_record(vm);
     array_push_lit(&vm->ffi, .name=name, .obj=cast(VmObjRecord*, obj));
-    // array_push_lit(&vm->globals, .tag=VM_REG_OBJ, .obj=obj);
+    array_push_lit(&vm->globals, .tag=VM_REG_OBJ, .obj=obj);
 }
 
 Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
