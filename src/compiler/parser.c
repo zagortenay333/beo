@@ -183,7 +183,7 @@ static Ast *parse_fn (Parser *par) {
         while (true) {
             if (! lex_try_peek(lex, TOKEN_IDENT)) break;
             Ast *arg = parse_var_def(par, false, false);
-            arg->flags |= AST_IS_FN_ARG;
+            arg->flags |= AST_IS_FN_ARG | AST_IS_LOCAL_VAR;
             array_push(&cast(AstBaseFn*, node)->inputs, arg);
             if (! lex_try_eat(lex, ',')) break;
         }

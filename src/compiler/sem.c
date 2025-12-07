@@ -30,6 +30,7 @@ istruct (Sem) {
     Scope *autoimports;
     Map(IString*, AstFile*) files;
 
+    ArrayAst eval_list;
     ArrayAst check_list;
 
     U64 error_count;
@@ -48,13 +49,14 @@ istruct (Sem) {
     } match;
 };
 
-static Void set_const_val (Sem *sem, Ast *node, VmReg reg);
+static Ast *get_target (Ast *node);
 static Result match_vv (Sem *sem, Ast **v1, Ast **v2);
 static Result match_nn (Sem *sem, Ast *n1, Ast *n2);
 static Result match_nv (Sem *sem, Ast *n, Ast **v);
 static Result match_nc (Sem *sem, Ast *n, Ast *c);
 static Result match_tt (Sem *sem, Type *t1, Type *t2);
 static Result match_tv (Sem *sem, Type *t, Ast **v);
+static Void set_const_val (Sem *sem, Ast *node, VmReg reg);
 static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope);
 static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node);
 static Result error_n Fmt(3, 4) (Sem *sem, Ast *n, CString fmt, ...);
@@ -88,6 +90,38 @@ static Void sem_panic (Sem *sem) {
     panic();
 }
 
+#define get_file(NODE)         (sem_get_file(sem, NODE))
+#define get_type(NODE)         ((NODE)->sem_type)
+#define set_type(NODE, TYPE)   ((NODE)->sem_type = TYPE)
+#define get_scope(NODE)        ((NODE)->sem_scope)
+#define set_scope(NODE, SCOPE) ((NODE)->sem_scope = SCOPE)
+
+#define try_get_type(NODE) ({\
+    Type *t = get_type(NODE);\
+    if (! t) return RESULT_DEFER;\
+    t;\
+})
+
+#define try_get_type_v(NODE) ({\
+    def1(n, acast(Ast*, NODE));\
+    Type *t = try_get_type(n);\
+    if (n->flags & AST_IS_TYPE) return error_n(sem, n, "Expected value expression.");\
+    t;\
+})
+
+#define try_get_type_t(NODE) ({\
+    def1(n, acast(Ast*, NODE));\
+    Type *t = try_get_type(n);\
+    if (! (n->flags & AST_IS_TYPE)) return error_n(sem, n, "Expected type expression.");\
+    t;\
+})
+
+#define try(RESULT, ...) ({\
+    def1(R, acast(Result, RESULT));\
+    if (R != RESULT_OK) { __VA_ARGS__; return R; }\
+    RESULT_OK;\
+})
+
 static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     AstFile *file = map_get_ptr(&sem->files, path);
     if (file) return file;
@@ -108,6 +142,59 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     map_add(&sem->files, path, file);
     return file;
 }
+
+// Top call should have allow_local_var = false.
+static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
+    if (node->flags & (AST_VISITED | AST_CAN_EVAL)) return RESULT_OK;
+
+    // When we enter into a function we allow references to local
+    // variables since we are looking to see whether the entire
+    // function can eval.
+    if (node->tag == AST_FN) allow_local_var = true;
+
+    node->flags |= AST_VISITED;
+
+    reach(r);
+    #define RETURN(R) {\
+        reached(r);\
+        node->flags &= ~AST_VISITED;\
+        return R;\
+    }
+
+    #define CAN_EVAL(child, ...) try(can_eval(sem, child, allow_local_var), RETURN(R));\
+
+    AST_VISIT_CHILDREN(node, CAN_EVAL);
+
+    Ast *d = get_target(node);
+    if (d) {
+        if ((d->flags & AST_IS_LOCAL_VAR) && !allow_local_var) RETURN(error_nn(sem, node, d, "Cannot compile-time eval local variable."));
+        CAN_EVAL(d);
+    }
+
+    node->flags |= AST_CAN_EVAL;
+    RETURN(RESULT_OK);
+
+    #undef RETURN
+    #undef CAN_EVAL
+}
+
+static Void ast_eval (Sem *sem, Ast *node) {
+}
+
+static Result eval (Sem *sem, Ast *node) {
+    try(can_eval(sem, node, false));
+
+    if (! (node->flags & AST_CAN_EVAL_WITHOUT_VM)) {
+        sem_msg(msg, LOG_ERROR);
+        astr_push_cstr(msg, "You need to implement the VM to eval this.\n\n");
+        sem_print_node(sem, msg, node);
+        sem_panic(sem);
+    }
+
+    ast_eval(sem, node);
+    return RESULT_OK;
+}
+
 
 static Type *alloc_type (Sem *sem, TypeTag tag) {
     Auto type   = mem_alloc(sem->mem, Type, .zeroed=true, .align=get_type_struct_align[tag], .size=get_type_struct_size[tag]);
@@ -157,16 +244,71 @@ static Void sem_set_target (Sem *sem, Ast *node, Ast *target) {
     sem->found_a_sem_edge = true;
 }
 
-#define get_file(NODE)         (sem_get_file(sem, NODE))
-#define get_type(NODE)         ((NODE)->sem_type)
-#define set_type(NODE, TYPE)   ((NODE)->sem_type = TYPE)
-#define get_scope(NODE)        ((NODE)->sem_scope)
-#define set_scope(NODE, SCOPE) ((NODE)->sem_scope = SCOPE)
-
 static AstFile *sem_get_file (Sem *sem, Ast *node) {
     for (Scope *s = get_scope(node); s; s = s->parent) {
         Ast *o = s->owner;
         if (o->tag == AST_FILE) return cast(AstFile*, o);
+    }
+
+    return 0;
+}
+
+static Void scope_seal (Sem *sem, Scope *scope) {
+    scope->owner->flags |= AST_IS_SEALED_SCOPE;
+}
+
+static Scope *scope_new (Sem *sem, Scope *parent, Ast *owner) {
+    Scope *scope = mem_new(sem->mem, Scope);
+    scope->parent = parent;
+    scope->owner = owner;
+    set_scope(owner, scope);
+    map_init(&scope->map, sem->mem);
+    return scope;
+}
+
+static Result scope_add (Sem *sem, Scope *scope, IString *key, Ast *val, Ast *error_node) {
+    Ast *def = map_get_ptr(&scope->map, key);
+    if (def) return error_nn(sem, error_node, def, "Attempting to redeclare definition.");
+
+    def = map_get_ptr(&sem->autoimports->map, key);
+    if (def) return error_nn(sem, error_node, def, "Attempting to shadow name that is auto-imported.");
+
+    map_add(&scope->map, key, val);
+    return RESULT_OK;
+}
+
+static Scope *scope_get_ancestor (Scope *s, AstTag tag) {
+    for (; s; s = s->parent) if (s->owner->tag == tag) return s;
+    return 0;
+}
+
+static Ast *scope_lookup_outside_in (Sem *sem, Scope *scope, IString *key, Ast *selector) {
+    Ast *target = map_get_ptr(&scope->map, key);
+    if (! target) return 0;
+    sem_set_target(sem, selector, target);
+    return target;
+}
+
+// @todo We are not checking for invalid forward references, but implementing
+// this should be postponed until we decide whether to add codegen or not.
+static Ast *scope_lookup_inside_out (Sem *sem, Scope *scope, IString *key, Ast *selector) {
+    Bool crossed_fn_scope = false;
+
+    while (scope) {
+        Ast *target = map_get_ptr(&scope->map, key);
+
+        if (target) {
+            if (crossed_fn_scope && (target->flags & AST_IS_LOCAL_VAR)) {
+                error_nn(sem, selector, target, "Invalid reference to target in enclosing function.");
+                return 0;
+            }
+
+            sem_set_target(sem, selector, target);
+            return target;
+        }
+
+        if (scope->owner->tag == AST_FN) crossed_fn_scope = true;
+        scope = scope->parent;
     }
 
     return 0;
@@ -326,93 +468,6 @@ static Result error_nt Fmt(4, 5) (Sem *sem, Ast *n, Type *t, CString fmt, ...) {
     sem->error_count++;
     return RESULT_ERROR;
 }
-
-static Void scope_seal (Sem *sem, Scope *scope) {
-    scope->owner->flags |= AST_IS_SEALED_SCOPE;
-}
-
-static Scope *scope_new (Sem *sem, Scope *parent, Ast *owner) {
-    Scope *scope = mem_new(sem->mem, Scope);
-    scope->parent = parent;
-    scope->owner = owner;
-    set_scope(owner, scope);
-    map_init(&scope->map, sem->mem);
-    return scope;
-}
-
-static Result scope_add (Sem *sem, Scope *scope, IString *key, Ast *val, Ast *error_node) {
-    Ast *def = map_get_ptr(&scope->map, key);
-    if (def) return error_nn(sem, error_node, def, "Attempting to redeclare definition.");
-
-    def = map_get_ptr(&sem->autoimports->map, key);
-    if (def) return error_nn(sem, error_node, def, "Attempting to shadow name that is auto-imported.");
-
-    map_add(&scope->map, key, val);
-    return RESULT_OK;
-}
-
-static Scope *scope_get_ancestor (Scope *s, AstTag tag) {
-    for (; s; s = s->parent) if (s->owner->tag == tag) return s;
-    return 0;
-}
-
-static Ast *scope_lookup_outside_in (Sem *sem, Scope *scope, IString *key, Ast *selector) {
-    Ast *target = map_get_ptr(&scope->map, key);
-    if (! target) return 0;
-    sem_set_target(sem, selector, target);
-    return target;
-}
-
-// @todo We are not checking for invalid forward references, but implementing
-// this should be postponed until we decide whether to add codegen or not.
-static Ast *scope_lookup_inside_out (Sem *sem, Scope *scope, IString *key, Ast *selector) {
-    Bool crossed_fn_scope = false;
-
-    while (scope) {
-        Ast *target = map_get_ptr(&scope->map, key);
-
-        if (target) {
-            if (crossed_fn_scope && (target->flags & AST_IS_LOCAL_VAR)) {
-                error_nn(sem, selector, target, "Invalid reference to target in enclosing function.");
-                return 0;
-            }
-
-            sem_set_target(sem, selector, target);
-            return target;
-        }
-
-        if (scope->owner->tag == AST_FN) crossed_fn_scope = true;
-        scope = scope->parent;
-    }
-
-    return 0;
-}
-
-#define try_get_type(NODE) ({\
-    Type *t = get_type(NODE);\
-    if (! t) return RESULT_DEFER;\
-    t;\
-})
-
-#define try_get_type_v(NODE) ({\
-    def1(n, acast(Ast*, NODE));\
-    Type *t = try_get_type(n);\
-    if (n->flags & AST_IS_TYPE) return error_n(sem, n, "Expected value expression.");\
-    t;\
-})
-
-#define try_get_type_t(NODE) ({\
-    def1(n, acast(Ast*, NODE));\
-    Type *t = try_get_type(n);\
-    if (! (n->flags & AST_IS_TYPE)) return error_n(sem, n, "Expected type expression.");\
-    t;\
-})
-
-#define try(RESULT, ...) ({\
-    def1(R, acast(Result, RESULT));\
-    if (R != RESULT_OK) { __VA_ARGS__; return R; }\
-    RESULT_OK;\
-})
 
 #define ERROR_MATCH() (error_match(sem, n1, n2, t1, t2))
 
@@ -951,6 +1006,7 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
     if (n->tag == AST_FN) array_push(&sem->fns, cast(AstFn*, n));
     if (n->flags & AST_IS_GLOBAL_VAR) array_push(&sem->globals, n);
     if (n->flags & AST_CREATES_SCOPE) scope = scope_new(sem, scope, n);
+    if ((n->flags & AST_MUST_EVAL) && !(n->flags & AST_EVALED)) array_push(&sem->eval_list, n);
 
     #define ADD_TO_CHECK_LIST(child, ...) add_to_check_list(sem, child, scope);
     AST_VISIT_CHILDREN(n, ADD_TO_CHECK_LIST);
@@ -960,27 +1016,32 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
 }
 
 static Void check_nodes (Sem *sem) {
-    Auto to_check = &sem->check_list;
-
     while (true) {
         sem->found_a_sem_edge = false;
-        U64 prev_to_check = to_check->count;
+        U64 prev_to_check = sem->check_list.count;
 
-        array_iter (n, to_check) {
+        array_iter (n, &sem->check_list) {
             if (check_node(sem, n) == RESULT_OK) {
                 n->flags |= AST_CHECKED;
                 if (! get_type(n)) set_type(n, sem->core_types.type_Void);
             }
+
             if (sem->error_count) sem_panic(sem);
         }
 
-        Bool new_to_check = (prev_to_check < to_check->count);
-        Bool checked      = to_check->count - array_find_remove_all(to_check, IT->flags & AST_CHECKED);
+        array_iter (n, &sem->eval_list) {
+            eval(sem, n);
+            if (sem->error_count) sem_panic(sem);
+        }
 
-        if (!sem->found_a_sem_edge && !new_to_check && !checked) break;
+        Bool new_to_check = (prev_to_check < sem->check_list.count);
+        Bool checked      = sem->check_list.count - array_find_remove_all(&sem->check_list, IT->flags & AST_CHECKED);
+        Bool evaled       = sem->eval_list.count  - array_find_remove_all(&sem->eval_list, IT->flags & AST_EVALED);
+
+        if (!sem->found_a_sem_edge && !new_to_check && !checked && !evaled) break;
     }
 
-    if (to_check->count) error_no_progress(sem);
+    if (sem->check_list.count) error_no_progress(sem);
 }
 
 SemProgram *sem_check (Sem *sem, String main_file_path) {

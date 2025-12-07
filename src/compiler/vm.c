@@ -299,7 +299,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         if (def->tag == AST_FN) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
             array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
-        } else if (def->flags & (AST_IS_FN_ARG|AST_IS_LOCAL_VAR)) {
+        } else if (def->flags & AST_IS_LOCAL_VAR) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
             assert_always(found);
 
