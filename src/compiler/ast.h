@@ -146,7 +146,7 @@ istruct (AstBaseFn)         { Ast base; ArrayAst inputs; Ast *output; };
 istruct (AstBaseUnary)      { Ast base; Ast *op; };
 
 istruct (AstAdd)            { AstBaseBinary base; };
-istruct (AstArrayLiteral)   { Ast base; ArrayAst inits; };
+istruct (AstArrayLiteral)   { Ast base; Ast *lhs; ArrayAst inits; };
 istruct (AstArrayType)      { Ast base; Ast *element; };
 istruct (AstAssign)         { AstBaseBinary base; AstTag fused_op /* AST_ASSIGN for =, AST_ADD for +=, ... */; };
 istruct (AstBlock)          { Ast base; ArrayAst statements; };
@@ -266,7 +266,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     if (_(f) & AST_BASE_FN)     { AM(A, I, AstBaseFn, inputs); FM(F, AstBaseFn, output); }\
     \
     switch (NODE->tag) {\
-    case AST_ARRAY_LITERAL:    AM(A, I, AstArrayLiteral, inits); break;\
+    case AST_ARRAY_LITERAL:    FM(F, AstArrayLiteral, lhs); AM(A, I, AstArrayLiteral, inits); break;\
     case AST_ARRAY_TYPE:       FM(F, AstArrayType, element); break;\
     case AST_BLOCK:            AM(A, I, AstBlock, statements); break;\
     case AST_CALL:             AM(A, I, AstCall, args); FM(F, AstCall, lhs); break;\

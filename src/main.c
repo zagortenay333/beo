@@ -55,19 +55,10 @@ static CmdLine cli_parse (Int argc, CString *argv) {
     return cli;
 }
 
-static Int print1 (Vm *vm, SliceVmReg args) {
-    array_iter_from (arg, &args, 2, *) printf("====== %li\n", arg->i64);
-    VmReg *result = array_ref(&args, 0);
-    result->tag = VM_REG_INT;
-    result->i64 = args.count - 2;
-    return 0;
-}
-
-static Int print2 (Vm *vm, SliceVmReg args) {
-    array_iter_from (arg, &args, 2, *) printf("-------- %li\n", arg->i64);
-    VmReg *result = array_ref(&args, 0);
-    result->tag = VM_REG_INT;
-    result->i64 = args.count - 2;
+static Int push (Vm *vm, SliceVmReg args) {
+    VmReg *arr = array_ref(&args, 2);
+    VmReg *val = array_ref(&args, 3);
+    array_push(&cast(VmObjArray*, arr->obj)->array, *val);
     return 0;
 }
 
@@ -83,11 +74,8 @@ Int main (Int argc, CString *argv) {
 
     Vm *vm = vm_new(mem);
 
-    vm_ffi_new(vm, str("foo"));
-    vm_ffi_add(vm, str("foo"), str("print1"), print1);
-
-    vm_ffi_new(vm, str("bar"));
-    vm_ffi_add(vm, str("bar"), str("print2"), print2);
+    vm_ffi_new(vm, str("array"));
+    vm_ffi_add(vm, str("array"), str("push"), push);
 
     vm_set_prog(vm, cli.main_file_path);
     vm_print(vm);

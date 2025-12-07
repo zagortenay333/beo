@@ -725,11 +725,31 @@ static Result check_node (Sem *sem, Ast *node) {
 
         if (! t) t = set_type(node, alloc_type_array(sem, node, 0));
 
-        Ast *first = array_get(&n->inits, 0);
-        Type *e = try_get_type_v(first);
-        cast(TypeArray*, t)->element = e;
-        if (e->tag == TYPE_VOID) return error_nt(sem, first, e, "Cannot have an array of Void values.");
-        array_iter_from (init, &n->inits, 1, *) try(match_nv(sem, first, init));
+        Type *et;
+        Ast *el;
+
+        if (n->lhs) {
+            el = n->lhs;
+            et = try_get_type_t(el);
+            array_iter (init, &n->inits) try(match_nc(sem, init, n->lhs));
+        } else {
+            el = array_get(&n->inits, 0);
+            et = try_get_type_v(el);
+            array_iter_from (init, &n->inits, 1, *) try(match_nv(sem, el, init));
+        }
+
+        cast(TypeArray*, t)->element = et;
+
+        switch (et->tag) {
+        case TYPE_ARRAY: break;
+        case TYPE_BOOL: break;
+        case TYPE_FLOAT: break;
+        case TYPE_FN: break;
+        case TYPE_INT: break;
+        case TYPE_RECORD: break;
+        case TYPE_STRING: break;
+        default: return error_nt(sem, el, et, "Invalid element type for array.");
+        }
 
         return RESULT_OK;
     }

@@ -205,16 +205,40 @@ static Ast *parse_array_literal_or_type (Parser *par) {
     lex_eat_this(lex, '[');
     Ast *expr = try_parse_expression(par, 0);
 
-    if (lex_try_eat(lex, ']')) {
-        Auto node = make_node(par, AstArrayType);
-        cast(Ast*, node)->pos = start;
-        node->element = parse_expression(par, prefix('['));
-        return complete_node(par, node);
-    } else {
+    if (expr) {
         Auto node = make_node(par, AstArrayLiteral);
         cast(Ast*, node)->pos = start;
         array_push(&node->inits, expr);
         if (lex_try_eat(lex, ',')) try_parse_expression_list(par, &node->inits);
+        lex_eat_this(lex, ']');
+        return complete_node(par, node);
+    } else {
+        lex_eat_this(lex, ']');
+        expr = try_parse_expression(par, prefix('['));
+
+        if (expr) {
+            Auto node = make_node(par, AstArrayType);
+            cast(Ast*, node)->pos = start;
+            node->element = expr;
+            return complete_node(par, node);
+        } else {
+            par_error_pos(par, start, "Array literals must either have at least 1 member or a lhs type spec.");
+        }
+    }
+}
+
+static Ast *parse_array_literal_or_index (Parser *par, Ast *lhs) {
+    if (lex_try_peek(lex, '[') && lex_try_peek_nth(lex, 2, ']')) {
+        Auto node = make_node_lhs(par, AstArrayLiteral, lhs);
+        node->lhs = lhs;
+        lex_eat_this(lex, '[');
+        lex_eat_this(lex, ']');
+        return complete_node(par, node);
+    } else {
+        Auto node = make_node_lhs(par, AstIndex, lhs);
+        node->lhs = lhs;
+        lex_eat_this(lex, '[');
+        node->idx = parse_expression(par, 0);
         lex_eat_this(lex, ']');
         return complete_node(par, node);
     }
@@ -306,15 +330,6 @@ static Ast *parse_record_literal (Parser *par, Ast *lhs) {
     return complete_node(par, node);
 }
 
-static Ast *parse_index (Parser *par, Ast *lhs) {
-    Auto node = make_node_lhs(par, AstIndex, lhs);
-    node->lhs = lhs;
-    lex_eat_this(lex, '[');
-    node->idx = parse_expression(par, 0);
-    lex_eat_this(lex, ']');
-    return complete_node(par, node);
-}
-
 static Ast *parse_call (Parser *par, Ast *lhs) {
     Auto node = make_node_lhs(par, AstCall, lhs);
     node->lhs = lhs;
@@ -382,7 +397,7 @@ static Ast *parse_expression_with_lhs (Parser *par, Ast *lhs) {
     case '.':                 return parse_dot(par, lhs);
     case '(':                 return parse_call(par, lhs);
     case '{':                 return parse_record_literal(par, lhs);
-    case '[':                 return parse_index(par, lhs);
+    case '[':                 return parse_array_literal_or_index(par, lhs);
     case '+':                 return parse_binary_op(par, AST_ADD, lhs);
     case '-':                 return parse_binary_op(par, AST_SUB, lhs);
     case '*':                 return parse_binary_op(par, AST_MUL, lhs);

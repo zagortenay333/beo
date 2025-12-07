@@ -1,6 +1,8 @@
 fn main {
-    var count: Int = foo.print1(1, 2, 3, 4, 3, 6);
-    .print(count);
+    var arr = [1];
+    array.push(arr, 2);
+    array.push(arr, 3);
+    .print(arr);
 }
 
 /*
