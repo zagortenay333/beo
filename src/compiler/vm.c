@@ -22,8 +22,9 @@ istruct (Emitter) {
     Array(ContinuePatch) continue_patches;
 };
 
+VmObjRecord *get_ffi (Vm *vm, String name);
 static VmRegOp emit_expression (Emitter *em, Ast *expr, I32);
-static Void print_reg (VmReg *reg, Bool runtime, Bool newline);
+static Void print_reg (Vm *vm ,VmReg *reg, Bool runtime, Bool newline);
 
 #define ENCODE_U32(N) (N)&0xff, (N>>8)&0xff, (N>>16)&0xff, (N>>24)&0xff
 
@@ -60,7 +61,7 @@ static Void reg_pop (Emitter *em) {
     em->next_reg--;
 }
 
-static Void print_obj (VmObj *obj, Bool runtime) {
+static Void print_obj (Vm *vm, VmObj *obj, Bool runtime) {
     switch (obj->tag) {
     case VM_OBJ_STRING: {
         if (runtime) printf("%.*s", STR(cast(VmObjString*, obj)->string));
@@ -69,7 +70,7 @@ static Void print_obj (VmObj *obj, Bool runtime) {
     case VM_OBJ_ARRAY: {
         printf("[");
         array_iter (it, &cast(VmObjArray*, obj)->array, *) {
-            print_reg(it, runtime, false);
+            print_reg(vm, it, runtime, false);
             if (! ARRAY_ITER_DONE) printf(", ");
         }
         printf("]");
@@ -78,7 +79,7 @@ static Void print_obj (VmObj *obj, Bool runtime) {
         printf("{ ");
         map_iter (slot, &cast(VmObjRecord*, obj)->record) {
             printf("%.*s: ", STR(slot->key));
-            print_reg(&slot->val, runtime, false);
+            print_reg(vm, &slot->val, runtime, false);
             printf(", ");
         }
         printf("}");
@@ -86,14 +87,25 @@ static Void print_obj (VmObj *obj, Bool runtime) {
     }
 }
 
-static Void print_reg (VmReg *reg, Bool runtime, Bool newline) {
+// @todo This is kinda stupid and slow.
+static Void print_cfn (Vm *vm, VmCFunction cfn) {
+    array_iter (it, &vm->ffi, *) {
+        map_iter (slot, &it->obj->record) {
+            assert_dbg(slot->val.tag == VM_REG_CFN);
+            if (slot->val.cfn == cfn) printf("cfn<%.*s>\n", STR(slot->key));
+        }
+    }
+}
+
+static Void print_reg (Vm *vm, VmReg *reg, Bool runtime, Bool newline) {
     switch (reg->tag) {
     case VM_REG_NIL:   printf("nil"); break;
     case VM_REG_INT:   printf("%li", reg->i64); break;
     case VM_REG_FLOAT: printf("%f", reg->f64); break;
     case VM_REG_BOOL:  printf("%s", reg->boolean ? "true" : "false"); break;
     case VM_REG_FN:    printf("fn<%.*s>", STR(*reg->fn->ast->name)); break;
-    case VM_REG_OBJ:   print_obj(reg->obj, runtime); break;
+    case VM_REG_CFN:   print_cfn(vm, reg->cfn); break;
+    case VM_REG_OBJ:   print_obj(vm, reg->obj, runtime); break;
     }
 
     if (newline) printf("\n");
@@ -588,7 +600,7 @@ Void vm_print (Vm *vm) {
                 VmReg *val = array_ref(&vm->constants, val_idx);
                 cur += 6;
                 printf("r%i = ", result_reg);
-                print_reg(val, false, true);
+                print_reg(vm, val, false, true);
             } break;
             }
         }
@@ -672,7 +684,7 @@ static Void gc_run (Vm *vm) {
 
         #if BUILD_DEBUG
             printf("Sweeped object: ");
-            print_obj(obj, false);
+            print_obj(vm, obj, false);
             printf("\n");
         #endif
 
@@ -748,6 +760,7 @@ static Void run_loop (Vm *vm) {
         case VM_REG_NIL:   badpath;\
         case VM_REG_OBJ:   badpath;\
         case VM_REG_FN:    badpath;\
+        case VM_REG_CFN:   badpath;\
         case VM_REG_BOOL:  badpath;\
         case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 OP arg2->f64; break;\
@@ -763,6 +776,7 @@ static Void run_loop (Vm *vm) {
         case VM_REG_NIL:   badpath;\
         case VM_REG_OBJ:   badpath;\
         case VM_REG_FN:    badpath;\
+        case VM_REG_CFN:   badpath;\
         case VM_REG_BOOL:  badpath;\
         case VM_REG_INT:   out->tag = VM_REG_BOOL; out->boolean = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_BOOL; out->boolean = arg1->f64 OP arg2->f64; break;\
@@ -798,6 +812,7 @@ static Void run_loop (Vm *vm) {
             switch (arg1->tag) {
             case VM_REG_NIL:   badpath;
             case VM_REG_FN:    badpath;
+            case VM_REG_CFN:   badpath;
             case VM_REG_BOOL:  badpath;
             case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 + arg2->i64; break;
             case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 + arg2->f64; break;
@@ -837,6 +852,7 @@ static Void run_loop (Vm *vm) {
             case VM_REG_BOOL:  badpath;
             case VM_REG_FLOAT: badpath;
             case VM_REG_FN:    badpath;
+            case VM_REG_CFN:   badpath;
             case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = arg1->i64 % arg2->i64; break;
             }
         } break;
@@ -852,6 +868,7 @@ static Void run_loop (Vm *vm) {
             case VM_REG_OBJ:   badpath;
             case VM_REG_BOOL:  badpath;
             case VM_REG_FN:    badpath;
+            case VM_REG_CFN:   badpath;
             case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = -arg->i64; break;
             case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = -arg->f64; break;
             }
@@ -968,7 +985,7 @@ static Void run_loop (Vm *vm) {
         case VM_OP_PRINT: {
             cr->pc += 2;
             VmReg *reg = get_reg(vm, cr, pc[1]);
-            print_reg(reg, true, true);
+            print_reg(vm, reg, true, true);
         } break;
 
         case VM_OP_CALL: {
@@ -1029,6 +1046,7 @@ Vm *vm_new (Mem *mem) {
 
     array_init(&vm->ffi, mem);
     array_init(&vm->registers, mem);
+    array_init(&vm->globals, mem);
     array_init(&vm->constants, mem);
     array_init(&vm->gc_objects, mem);
     array_init(&vm->call_stack, mem);
@@ -1049,8 +1067,7 @@ Void vm_run (Vm *vm) {
 VmObjRecord *get_ffi (Vm *vm, String name) {
     array_iter (it, &vm->ffi, *) {
         if (str_match(it->name, name)) {
-            assert_dbg(it->obj->tag == VM_OBJ_RECORD);
-            return cast(VmObjRecord*, it->obj);
+            return it->obj;
         }
     }
 
@@ -1059,11 +1076,17 @@ VmObjRecord *get_ffi (Vm *vm, String name) {
 
 Void vm_ffi_new (Vm *vm, String name) {
     VmObj *obj = gc_new_record(vm);
-    array_push_lit(&vm->ffi, .name=name, .obj=obj);
+    array_push_lit(&vm->ffi, .name=name, .obj=cast(VmObjRecord*, obj));
 }
 
 Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
     VmObjRecord *obj = get_ffi(vm, ffi_name);
+
+    if (! obj) {
+        printf("Ffi module [%.*s] not found.\n", STR(ffi_name));
+        return;
+    }
+
     VmReg reg = { .tag=VM_REG_CFN, .cfn=fn };
     map_add(&obj->record, name, reg);
 }

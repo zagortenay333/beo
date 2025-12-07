@@ -127,9 +127,10 @@ istruct (Vm) {
 
     VmFunction *entry;
     ArrayU8 instructions;
+    ArrayVmReg globals;
     ArrayVmReg constants;
     ArrayVmObj gc_objects;
-    Array(struct { String name; VmObj *obj; }) ffi;
+    Array(struct { String name; VmObjRecord *obj; }) ffi;
 
     ArrayVmReg registers;
     Array(CallRecord) call_stack;
