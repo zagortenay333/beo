@@ -222,34 +222,48 @@ static VmReg ast_eval (Sem *sem, Ast *node) {
         val;\
     })
 
-    #define BINOP(op) ({\
+    #define BINOP(OP) ({\
         VmReg c1 = TRY(ast_eval(sem, cast(AstBaseBinary*, node)->op1));\
         VmReg c2 = TRY(ast_eval(sem, cast(AstBaseBinary*, node)->op2));\
-        op(c1, c2);\
+        vm_reg_##OP(c1, c2);\
+    })
+
+    #define UNOP(OP) ({\
+        VmReg c = TRY(ast_eval(sem, cast(AstBaseUnary*, node)->op));\
+        vm_reg_##OP(c);\
     })
 
     switch (node->tag) {
-    case AST_ADD: break;
-    case AST_BOOL_LITERAL: break;
-    case AST_DIV: break;
-    case AST_EQUAL: break;
-    case AST_FLOAT_LITERAL: break;
-    case AST_GREATER: break;
-    case AST_GREATER_EQUAL: break;
-    case AST_IDENT: break;
-    case AST_INT_LITERAL: break;
-    case AST_LESS: break;
-    case AST_LESS_EQUAL: break;
-    case AST_LOGICAL_AND: break;
-    case AST_LOGICAL_OR: break;
-    case AST_MOD: break;
-    case AST_MUL: break;
-    case AST_NEGATE: break;
-    case AST_NOT: break;
-    case AST_NOT_EQUAL: break;
-    case AST_STRING_LITERAL: break;
-    case AST_SUB: break;
-    case AST_VAR_DEF: break;
+    case AST_ADD:            return BINOP(add);
+    case AST_DIV:            return BINOP(div);
+    case AST_EQUAL:          return BINOP(equal);
+    case AST_GREATER:        return BINOP(greater);
+    case AST_GREATER_EQUAL:  return BINOP(greater_equal);
+    case AST_LESS:           return BINOP(less);
+    case AST_LESS_EQUAL:     return BINOP(less_equal);
+    case AST_MOD:            return BINOP(mod);
+    case AST_MUL:            return BINOP(mul);
+    case AST_NOT_EQUAL:      return BINOP(mod);
+    case AST_SUB:            return BINOP(mod);
+    case AST_NEGATE:         return UNOP(negate);
+    case AST_NOT:            return UNOP(not);
+    case AST_BOOL_LITERAL:   return (VmReg){ .tag=VM_REG_BOOL, .boolean=cast(AstBoolLiteral*, node)->val };
+    case AST_FLOAT_LITERAL:  return (VmReg){ .tag=VM_REG_FLOAT, .f64=cast(AstFloatLiteral*, node)->val };
+    case AST_INT_LITERAL:    return (VmReg){ .tag=VM_REG_INT, .i64=cast(AstIntLiteral*, node)->val };
+    case AST_IDENT:          return ast_eval(sem, cast(AstIdent*, node)->sem_edge);
+    case AST_VAR_DEF:        return ast_eval(sem, cast(AstVarDef*, node)->init);
+    case AST_LOGICAL_AND: {
+        Auto n = cast(AstBaseBinary*, node);
+        VmReg out = TRY(ast_eval(sem, n->op1));
+        if (out.boolean) out = TRY(ast_eval(sem, n->op2));
+        return out;
+    }
+    case AST_LOGICAL_OR: {
+        Auto n = cast(AstBaseBinary*, node);
+        VmReg out = TRY(ast_eval(sem, n->op1));
+        if (! out.boolean) out = TRY(ast_eval(sem, n->op2));
+        return out;
+    }
     default: return (VmReg){};
     }
 
@@ -265,8 +279,11 @@ static Result eval (Sem *sem, Ast *node) {
     if (val.tag == VM_REG_NIL) {
         // tmem_new(tm);
         // SemProgram2 *prog = collect_program(sem, node, tm);
+        return RESULT_ERROR;
     }
 
+    map_add(&sem->global_to_reg, node->id, val);
+    node->flags |= AST_EVALED;
     return RESULT_OK;
 }
 
@@ -941,7 +958,7 @@ static Result check_node (Sem *sem, Ast *node) {
             set_type(node, try_get_type_t(n->constraint));
         }
 
-        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) {
+        if ((node->flags & AST_IS_GLOBAL_VAR) && !(node->flags & AST_EVALED)) {
             return RESULT_DEFER;
         }
 

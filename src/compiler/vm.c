@@ -548,7 +548,8 @@ Void vm_set_prog (Vm *vm, String main_file_path) {
     vm->sem_prog = sem_check(vm->sem, main_file_path);
 
     array_iter (global, vm->sem_prog->globals) {
-        array_push(&vm->globals, sem_get_const_val(vm->sem, global));
+        VmReg r = sem_get_const_val(vm->sem, global);
+        array_push(&vm->globals, r);
     }
 
     emit_fn_constant(vm, vm->sem_prog->entry);

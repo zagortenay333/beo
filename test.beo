@@ -1,10 +1,7 @@
-var x = [1, 2, 3];
+var x = 42 + 1;
 
 fn main {
-    var arr = String[];
-    array.push(arr, "asdf");
-    var y : String = arr[0];
-    .print(y);
+    .print(x);
 }
 
 /*
