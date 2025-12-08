@@ -215,16 +215,54 @@ static SemProgram2 *collect_program (Sem *sem, Ast *node, Mem *mem) {
     return prog;
 }
 
-static Bool ast_eval (Sem *sem, Ast *node) {
-    return false;
+static VmReg ast_eval (Sem *sem, Ast *node) {
+    #define TRY(X) ({\
+        VmReg val = (X);\
+        if (val.tag == VM_REG_NIL) return val;\
+        val;\
+    })
+
+    #define BINOP(op) ({\
+        VmReg c1 = TRY(ast_eval(sem, cast(AstBaseBinary*, node)->op1));\
+        VmReg c2 = TRY(ast_eval(sem, cast(AstBaseBinary*, node)->op2));\
+        op(c1, c2);\
+    })
+
+    switch (node->tag) {
+    case AST_ADD: break;
+    case AST_BOOL_LITERAL: break;
+    case AST_DIV: break;
+    case AST_EQUAL: break;
+    case AST_FLOAT_LITERAL: break;
+    case AST_GREATER: break;
+    case AST_GREATER_EQUAL: break;
+    case AST_IDENT: break;
+    case AST_INT_LITERAL: break;
+    case AST_LESS: break;
+    case AST_LESS_EQUAL: break;
+    case AST_LOGICAL_AND: break;
+    case AST_LOGICAL_OR: break;
+    case AST_MOD: break;
+    case AST_MUL: break;
+    case AST_NEGATE: break;
+    case AST_NOT: break;
+    case AST_NOT_EQUAL: break;
+    case AST_STRING_LITERAL: break;
+    case AST_SUB: break;
+    case AST_VAR_DEF: break;
+    default: return (VmReg){};
+    }
+
+    #undef TRY
+    #undef BINOP
 }
 
 static Result eval (Sem *sem, Ast *node) {
     try(can_eval(sem, node, false));
 
-    Bool ok = ast_eval(sem, node);
+    VmReg val = ast_eval(sem, node);
 
-    if (! ok) {
+    if (val.tag == VM_REG_NIL) {
         // tmem_new(tm);
         // SemProgram2 *prog = collect_program(sem, node, tm);
     }

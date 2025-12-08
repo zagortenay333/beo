@@ -835,6 +835,7 @@ static Void run_loop (Vm *vm) {
         switch (cast(VmOp, *pc)) {
         case VM_OP_NOP: cr->pc += 1; break;
 
+        case VM_OP_ADD: run_binop(+); break;
         case VM_OP_SUB: run_binop(-); break;
         case VM_OP_MUL: run_binop(*); break;
         case VM_OP_DIV: run_binop(/); break;
@@ -845,43 +846,6 @@ static Void run_loop (Vm *vm) {
         case VM_OP_GREATER_EQUAL: run_compare(>=); break;
         case VM_OP_LESS_EQUAL:    run_compare(<=); break;
         case VM_OP_LESS:          run_compare(<); break;
-
-        case VM_OP_ADD: {
-            cr->pc += 4;
-
-            VmReg *out  = get_reg(vm, cr, pc[1]);
-            VmReg *arg1 = get_reg(vm, cr, pc[2]);
-            VmReg *arg2 = get_reg(vm, cr, pc[3]);
-
-            switch (arg1->tag) {
-            case VM_REG_NIL:   badpath;
-            case VM_REG_FN:    badpath;
-            case VM_REG_CFN:   badpath;
-            case VM_REG_BOOL:  badpath;
-            case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 + arg2->i64; break;
-            case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 + arg2->f64; break;
-            case VM_REG_OBJ: {
-                switch (arg1->obj->tag) {
-                case VM_OBJ_STRING: {
-                    assert_always(arg2->tag == VM_REG_OBJ && arg2->obj->tag == VM_OBJ_STRING);
-
-                    String str1 = cast(VmObjString*, arg1->obj)->string;
-                    String str2 = cast(VmObjString*, arg2->obj)->string;
-
-                    VmObj *new_string = gc_new_string(vm, str1.count + str2.count);
-                    Char *p = cast(VmObjString*, new_string)->string.data;
-
-                    memcpy(p, str1.data, str1.count);
-                    memcpy(p+str1.count, str2.data, str2.count);
-
-                    out->tag = VM_REG_OBJ;
-                    out->obj = new_string;
-                } break;
-                default: badpath;
-                }
-            } break;
-            }
-        } break;
 
         case VM_OP_MOD: {
             cr->pc += 4;
@@ -1170,3 +1134,81 @@ Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
     VmReg reg = { .tag=VM_REG_CFN, .cfn=fn };
     map_add(&obj->record, name, reg);
 }
+
+#define binop(OP) {\
+    VmReg out;\
+    switch (r1.tag) {\
+    case VM_REG_NIL:   badpath;\
+    case VM_REG_OBJ:   badpath;\
+    case VM_REG_FN:    badpath;\
+    case VM_REG_CFN:   badpath;\
+    case VM_REG_BOOL:  badpath;\
+    case VM_REG_INT:   out.tag = VM_REG_INT;   out.i64 = r1.i64 OP r2.i64; break;\
+    case VM_REG_FLOAT: out.tag = VM_REG_FLOAT; out.f64 = r1.f64 OP r2.f64; break;\
+    }\
+    return out;\
+}
+
+#define compare(OP) {\
+    VmReg out;\
+    switch (r1.tag) {\
+    case VM_REG_NIL:   badpath;\
+    case VM_REG_OBJ:   badpath;\
+    case VM_REG_FN:    badpath;\
+    case VM_REG_CFN:   badpath;\
+    case VM_REG_BOOL:  badpath;\
+    case VM_REG_INT:   out.tag = VM_REG_BOOL; out.boolean = r1.i64 OP r2.i64; break;\
+    case VM_REG_FLOAT: out.tag = VM_REG_BOOL; out.boolean = r1.f64 OP r2.f64; break;\
+    }\
+    return out;\
+}
+
+VmReg vm_reg_add           (VmReg r1, VmReg r2) { binop(+); }
+VmReg vm_reg_sub           (VmReg r1, VmReg r2) { binop(-); }
+VmReg vm_reg_div           (VmReg r1, VmReg r2) { binop(/); }
+VmReg vm_reg_mul           (VmReg r1, VmReg r2) { binop(*); }
+VmReg vm_reg_not_equal     (VmReg r1, VmReg r2) { compare(!=); }
+VmReg vm_reg_equal         (VmReg r1, VmReg r2) { compare(==); }
+VmReg vm_reg_greater       (VmReg r1, VmReg r2) { compare(>); }
+VmReg vm_reg_greater_equal (VmReg r1, VmReg r2) { compare(>=); }
+VmReg vm_reg_less_equal    (VmReg r1, VmReg r2) { compare(<=); }
+VmReg vm_reg_less          (VmReg r1, VmReg r2) { compare(<); }
+
+VmReg vm_reg_mod (VmReg r1, VmReg r2) {
+    VmReg out;
+    switch (r1.tag) {
+    case VM_REG_NIL:   badpath;
+    case VM_REG_OBJ:   badpath;
+    case VM_REG_FN:    badpath;
+    case VM_REG_CFN:   badpath;
+    case VM_REG_BOOL:  badpath;
+    case VM_REG_FLOAT: badpath;
+    case VM_REG_INT:   out.tag = VM_REG_INT; out.i64 = r1.i64 % r2.i64; break;
+    }
+    return out;
+}
+
+VmReg vm_reg_negate (VmReg r) {
+    VmReg out;
+    switch (r.tag) {
+    case VM_REG_NIL:   badpath;
+    case VM_REG_OBJ:   badpath;
+    case VM_REG_BOOL:  badpath;
+    case VM_REG_FN:    badpath;
+    case VM_REG_CFN:   badpath;
+    case VM_REG_INT:   out.tag = VM_REG_INT;   out.i64 = -r.i64; break;
+    case VM_REG_FLOAT: out.tag = VM_REG_FLOAT; out.f64 = -r.f64; break;
+    }
+    return out;
+}
+
+VmReg vm_reg_not (VmReg r) {
+    VmReg out;
+    assert_always(r.tag == VM_REG_BOOL);
+    out.boolean = !r.boolean;
+    out.tag = VM_REG_BOOL;
+    return out;
+}
+
+#undef binop
+#undef compare
