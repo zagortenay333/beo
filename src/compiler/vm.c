@@ -682,6 +682,28 @@ static VmReg *get_reg (Vm *vm, CallRecord *cr, VmRegOp op) {
     return array_ref(&vm->registers, cr->reg_base + op);
 }
 
+static void gc_free (Vm *vm, VmObj *obj) {
+    switch (obj->tag) {
+    case VM_OBJ_STRING: {
+        Auto o = cast(VmObjString*, obj);
+        mem_free(mem_root, .old_ptr=o->string.data, .size=o->string.count);
+        mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
+    } break;
+
+    case VM_OBJ_ARRAY: {
+        Auto o = cast(VmObjArray*, obj);
+        array_free(&o->array);
+        mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
+    } break;
+
+    case VM_OBJ_RECORD: {
+        Auto o = cast(VmObjRecord*, obj);
+        map_free(&o->record);
+        mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
+    } break;
+    }
+}
+
 static Void gc_run (Vm *vm) {
     if (vm->call_stack.count == 0) return;
 
@@ -741,26 +763,7 @@ static Void gc_run (Vm *vm) {
             printf("\n");
         #endif
 
-        switch (obj->tag) {
-        case VM_OBJ_STRING: {
-            Auto o = cast(VmObjString*, obj);
-            mem_free(mem_root, .old_ptr=o->string.data, .size=o->string.count);
-            mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
-        } break;
-
-        case VM_OBJ_ARRAY: {
-            Auto o = cast(VmObjArray*, obj);
-            array_free(&o->array);
-            mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
-        } break;
-
-        case VM_OBJ_RECORD: {
-            Auto o = cast(VmObjRecord*, obj);
-            map_free(&o->record);
-            mem_free(mem_root, .old_ptr=o, .size=sizeof(o));
-        } break;
-        }
-
+        gc_free(vm, obj);
         array_remove(&vm->gc_objects, ARRAY_IDX--);
     }
 }
@@ -1117,6 +1120,12 @@ Vm *vm_new (Mem *mem) {
 Void vm_run (Vm *vm) {
     fn_call(vm, vm->entry, 0);
     run_loop(vm);
+}
+
+Void vm_destroy (Vm *vm) {
+    array_iter (obj, &vm->gc_objects) {
+        gc_free(vm, obj);
+    }
 }
 
 static VmObjRecord *get_ffi (Vm *vm, String name) {

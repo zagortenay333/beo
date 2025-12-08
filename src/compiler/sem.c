@@ -302,6 +302,7 @@ static Result eval (Sem *sem, Ast *node) {
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
         vm_run(vm);
+        vm_destroy(vm);
     }
 
     map_add(&sem->global_to_reg, node->id, val);

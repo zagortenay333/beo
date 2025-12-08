@@ -80,4 +80,5 @@ Int main (Int argc, CString *argv) {
     vm_set_prog_from_str(vm, cli.main_file_path);
     vm_print(vm);
     vm_run(vm);
+    vm_destroy(vm);
 }

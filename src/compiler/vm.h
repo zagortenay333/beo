@@ -138,6 +138,7 @@ istruct (Vm) {
 };
 
 Vm   *vm_new               (Mem *);
+Void  vm_destroy           (Vm *);
 Void  vm_set_prog          (Vm *, SemProgram *);
 Void  vm_set_prog_from_str (Vm *, String);
 Void  vm_print             (Vm *);
