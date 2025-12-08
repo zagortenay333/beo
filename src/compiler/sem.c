@@ -218,7 +218,7 @@ static SemProgram *collect_program (Sem *sem, Ast *node, Mem *mem) {
     return prog;
 }
 
-// If this returns VM_REG_NIL, then the node could not be 
+// If this returns VM_REG_NIL, then the node could not be
 // evaled and should be compiled to the VM for evaling.
 static VmReg ast_eval (Sem *sem, Ast *node) {
     #define TRY(X) ({\
@@ -286,15 +286,17 @@ static Result eval (Sem *sem, Ast *node) {
         tmem_pin(tm, 0);
 
         SemProgram *prog  = collect_program(sem, node, tm);
-        Ast *original_entry = prog->entry;
 
+        // We have to construct an AST for an imaginary entry function.
+        // @todo Right now we dont bother constructing the return signature
+        // AST node because the the backend doesn't need one, but it still
+        // feels kind of sketchy.
         if (prog->entry->tag != AST_FN) {
-            // @todo For now we don't actually allocate the return value
-            // ast node because the the backend doesn't need one, but it
-            // still feels kind of sketchy.
             String fn_name = astr_fmt(tm, "global_var_wrapper@%lu", prog->entry->pos.first_line);
             Ast *fn  = ast_alloc(tm, AST_FN, 0);
             Ast *ret = ast_alloc(tm, AST_RETURN, 0);
+            fn->pos = prog->entry_pos;
+            ret->pos = prog->entry_pos;
             cast(AstFn*, fn)->name = intern_str(sem->interns, fn_name);
             array_push(&cast(AstFn*, fn)->statements, ret);
             cast(AstReturn*, ret)->sem_edge = fn;
@@ -305,27 +307,8 @@ static Result eval (Sem *sem, Ast *node) {
 
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
-
-        switch (get_type(original_entry)->tag) {
-        case TYPE_FFI:
-        case TYPE_ARRAY: 
-        case TYPE_RECORD:
-        case TYPE_STRING:
-        case TYPE_TOP:
-        case TYPE_VOID:
-            // @todo In order to handle array/string/objects we somehow have to
-            // pull them out of one VM and insert them into the other (main) VM...
-            return error_n(sem, original_entry, "Expressions of this type cannot compile-time eval at moment.");
-
-        case TYPE_BOOL:
-        case TYPE_FLOAT:
-        case TYPE_FN: 
-        case TYPE_INT:
-            vm_run(vm);
-            val = array_get(&vm->registers, 0);
-            break;
-        }
-
+        vm_run(vm);
+        val = vm_transfer_result(sem->vm, vm);
         vm_destroy(vm);
     }
 
@@ -1003,6 +986,11 @@ static Result check_node (Sem *sem, Ast *node) {
             set_type(node, t);
         } else {
             set_type(node, try_get_type_t(n->constraint));
+        }
+
+        if (n->init) {
+            Type *t = try_get_type_v(n->init);
+            if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->init, t, "expected concrete type");
         }
 
         if ((node->flags & AST_IS_GLOBAL_VAR) && !(node->flags & AST_EVALED)) {

@@ -1232,3 +1232,27 @@ VmReg vm_reg_not (VmReg r) {
 
 #undef binop
 #undef compare
+
+// The purpose of this function is to take the return value
+// of the entry function in the @from VM and transfer it to
+// the @to VM.
+//
+// By 'transfer' we mean that we will copy the value in such
+// a way that the returned VmReg can be attached to a global
+// var AST node (see sem_get_const_val()) which will be used
+// when the @to VM starts running.
+//
+// The main use case is when compile-time evaling expressions
+// inside a VM. There needs to be a way to take the computed
+// value and attach it onto the AST expression such that the
+// main VM (the one that runs the main program) can use it.
+//
+// See the eval() function in the sem.c module for usage.
+//
+// @todo Right now we assume that the very first register
+// in the vm->registers array is the one with the return
+// value. Although this is true and the gc won't mess with
+// it, it still feels hacky and a more formal interface
+// would be welcome.
+VmReg vm_transfer_result (Vm *to, Vm *from) {
+}

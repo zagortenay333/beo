@@ -1,9 +1,9 @@
-fn foo -> String {
+fn foo -> Int {
     .print("hello there");
-    return "asdf";
+    return 42;
 }
 
-var x = foo();
+var x = foo;
 
 fn main {
     .print(x);

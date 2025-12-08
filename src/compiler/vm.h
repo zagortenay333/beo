@@ -61,7 +61,7 @@ istruct (VmFunction) {
     // This is the number of preallocated regs. For example,
     // the function:
     //
-    //     fn (x: Int, y: Int) -> Int {}
+    //     fn foo (x: Int, y: Int) -> Int {}
     //
     // will have 4 preallocated registers:
     //
@@ -141,6 +141,7 @@ Vm   *vm_new               (Mem *);
 Void  vm_destroy           (Vm *);
 Void  vm_set_prog          (Vm *, SemProgram *);
 Void  vm_set_prog_from_str (Vm *, String);
+VmReg vm_transfer_result   (Vm *, Vm *);
 Void  vm_print             (Vm *);
 Void  vm_run               (Vm *);
 Void  vm_ffi_new           (Vm *, String);
