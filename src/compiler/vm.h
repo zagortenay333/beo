@@ -139,9 +139,22 @@ istruct (Vm) {
     Array(CallRecord) call_stack;
 };
 
-Vm   *vm_new      (Mem *);
-Void  vm_set_prog (Vm *, String);
-Void  vm_print    (Vm *);
-Void  vm_run      (Vm *);
-Void  vm_ffi_new  (Vm *, String);
-Void  vm_ffi_add  (Vm *, String, String, VmCFunction);
+Vm   *vm_new               (Mem *);
+Void  vm_set_prog          (Vm *, String);
+Void  vm_print             (Vm *);
+Void  vm_run               (Vm *);
+Void  vm_ffi_new           (Vm *, String);
+Void  vm_ffi_add           (Vm *, String, String, VmCFunction);
+VmReg vm_reg_add           (VmReg, VmReg);
+VmReg vm_reg_sub           (VmReg, VmReg);
+VmReg vm_reg_div           (VmReg, VmReg);
+VmReg vm_reg_mul           (VmReg, VmReg);
+VmReg vm_reg_not_equal     (VmReg, VmReg);
+VmReg vm_reg_equal         (VmReg, VmReg);
+VmReg vm_reg_greater       (VmReg, VmReg);
+VmReg vm_reg_greater_equal (VmReg, VmReg);
+VmReg vm_reg_less_equal    (VmReg, VmReg);
+VmReg vm_reg_less          (VmReg, VmReg);
+VmReg vm_reg_mod           (VmReg, VmReg);
+VmReg vm_reg_negate        (VmReg);
+VmReg vm_reg_not           (VmReg);
