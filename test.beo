@@ -1,6 +1,7 @@
 var x = 42 + 1;
 
 fn main {
+    x += 1;
     .print(x);
 }
 

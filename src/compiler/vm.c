@@ -116,16 +116,26 @@ static Void add_reg_bind (Emitter *em, Ast *var_def, VmRegOp reg) {
     map_add(&em->binds, var_def->id, reg);
 }
 
-// This function returns the idx into bc->constants at which
-// the VmFunction is.
-//
-// @todo We should make this function faster with a hash table.
+// Returns index into vm->constants.
 static U32 get_fn_from_ast (Vm *vm, AstFn *ast) {
     assert_always(vm->constants.count <= UINT32_MAX);
 
     array_iter (r, &vm->constants, *) {
         if (r->tag != VM_REG_FN) continue;
         if (r->fn->ast == ast) return cast(U32, ARRAY_IDX);
+    }
+
+    badpath;
+}
+
+// Returns index into vm->globals.
+static U32 get_global_from_ast (Vm *vm, Ast *ast) {
+    assert_always(vm->sem_prog->globals->count <= UINT32_MAX);
+
+    array_iter (global, vm->sem_prog->globals) {
+        if (global == ast) {
+            return cast(U32, ARRAY_IDX);
+        }
     }
 
     badpath;
@@ -310,16 +320,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
                 emit_move(em, result_reg, reg);
             }
         } else if (def->flags & AST_IS_GLOBAL_VAR) {
-            I64 global_idx = -1;
-
-            array_iter (global, em->vm->sem_prog->globals) {
-                if (global == def) {
-                    global_idx = ARRAY_IDX;
-                    break;
-                }
-            }
-
-            assert_always(global_idx > -1 && global_idx <= UINT32_MAX);
+            I64 global_idx = get_global_from_ast(em->vm, def);
             array_push_n(&em->vm->instructions, VM_OP_GLOBAL_GET, result_reg, ENCODE_U32(global_idx));
         } else {
             badpath;
@@ -387,10 +388,13 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         })
 
         if (n->op1->tag == AST_IDENT) {
-            if (n->op1->flags & AST_IS_GLOBAL_VAR) {
-                badpath; // @todo
+            Ast *def = cast(AstIdent*, n->op1)->sem_edge;
+
+            if (def->flags & AST_IS_GLOBAL_VAR) {
+                VmRegOp val_reg = emit_rhs(-1);
+                U32 global_idx  = get_global_from_ast(em->vm, def);
+                array_push_n(&em->vm->instructions, VM_OP_GLOBAL_SET, val_reg, ENCODE_U32(global_idx));
             } else {
-                Ast *def = cast(AstIdent*, n->op1)->sem_edge;
                 VmRegOp result_reg;
                 Bool found = map_get(&em->binds, def->id, &result_reg);
                 assert_always(found);
