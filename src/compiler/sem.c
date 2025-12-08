@@ -50,6 +50,7 @@ istruct (Sem) {
 };
 
 static Ast *get_target (Ast *node);
+static AstFile *sem_get_file (Sem *sem, Ast *node);
 static Result match_vv (Sem *sem, Ast **v1, Ast **v2);
 static Result match_nn (Sem *sem, Ast *n1, Ast *n2);
 static Result match_nv (Sem *sem, Ast *n, Ast **v);
@@ -281,26 +282,32 @@ static Result eval (Sem *sem, Ast *node) {
 
     VmReg val = ast_eval(sem, node);
 
-    if (val.tag == VM_REG_NIL) { // We need to compile for the VM in order to eval.
+    if (val.tag == VM_REG_NIL) { // We need to run the expression inside a VM.
         tmem_new(tm);
         tmem_pin(tm, 0);
 
-        SemProgram *prog  = collect_program(sem, node, tm);
+        SemProgram *prog = collect_program(sem, node, tm);
 
         // We have to construct an AST for an imaginary entry function.
         // @todo Right now we dont bother constructing the return signature
         // AST node because the the backend doesn't need one, but it still
         // feels kind of sketchy.
         if (prog->entry->tag != AST_FN) {
-            String fn_name = astr_fmt(tm, "global_var_wrapper@%lu", prog->entry->pos.first_line);
+            AstFile *file  = get_file(prog->entry);
+            String fn_name = astr_fmt(tm, "global_var_wrapper:%.*s:%lu", STR(*file->path), prog->entry->pos.first_line);
+
             Ast *fn  = ast_alloc(tm, AST_FN, 0);
             Ast *ret = ast_alloc(tm, AST_RETURN, 0);
-            fn->pos = prog->entry_pos;
-            ret->pos = prog->entry_pos;
+
+            fn->pos  = prog->entry->pos;
+            ret->pos = prog->entry->pos;
+
             cast(AstFn*, fn)->name = intern_str(sem->interns, fn_name);
-            array_push(&cast(AstFn*, fn)->statements, ret);
+
             cast(AstReturn*, ret)->sem_edge = fn;
             cast(AstReturn*, ret)->result = (prog->entry->tag == AST_VAR_DEF) ? cast(AstVarDef*, prog->entry)->init : prog->entry;
+            array_push(&cast(AstFn*, fn)->statements, ret);
+
             array_push(&prog->fns, cast(AstFn*, fn));
             prog->entry = fn;
         }
