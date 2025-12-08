@@ -130,9 +130,9 @@ static U32 get_fn_from_ast (Vm *vm, AstFn *ast) {
 
 // Returns index into vm->globals.
 static U32 get_global_from_ast (Vm *vm, Ast *ast) {
-    assert_always(vm->sem_prog->globals->count <= UINT32_MAX);
+    assert_always(vm->sem_prog->globals.count <= UINT32_MAX);
 
-    array_iter (global, vm->sem_prog->globals) {
+    array_iter (global, &vm->sem_prog->globals) {
         if (global == ast) {
             return cast(U32, ARRAY_IDX);
         }
@@ -551,16 +551,17 @@ Void vm_set_prog (Vm *vm, String main_file_path) {
     vm->sem = sem_new(vm->mem, vm, interns);
     vm->sem_prog = sem_check(vm->sem, main_file_path);
 
-    array_iter (global, vm->sem_prog->globals) {
+    array_iter (global, &vm->sem_prog->globals) {
         VmReg r = sem_get_const_val(vm->sem, global);
         array_push(&vm->globals, r);
     }
 
-    emit_fn_constant(vm, vm->sem_prog->entry);
+    assert_dbg(vm->sem_prog->entry->tag == AST_FN);
+    emit_fn_constant(vm, cast(AstFn*, vm->sem_prog->entry));
     vm->entry = array_ref(&vm->constants, 0)->fn;
-    array_iter (fn, vm->sem_prog->fns) if (fn != vm->sem_prog->entry) emit_fn_constant(vm, fn);
+    array_iter (fn, &vm->sem_prog->fns) if (cast(Ast*, fn) != vm->sem_prog->entry) emit_fn_constant(vm, fn);
 
-    array_iter (fn, vm->sem_prog->fns) emit_fn_bytecode(vm, fn);
+    array_iter (fn, &vm->sem_prog->fns) emit_fn_bytecode(vm, fn);
 }
 
 Void vm_print (Vm *vm) {

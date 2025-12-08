@@ -59,21 +59,12 @@ istruct (SemCoreTypes) {
     Type *type_String;
 };
 
-istruct (SemProgram2) {
+istruct (SemProgram) {
     Sem *sem;
-    Mem *mem;
     Ast *entry;
     ArrayAstFn fns;
     ArrayType types;
     ArrayAst globals;
-};
-
-istruct (SemProgram) {
-    Sem *sem;
-    AstFn *entry;
-    ArrayAstFn *fns;
-    ArrayType *types;
-    ArrayAst *globals;
 };
 
 istruct (Scope) {

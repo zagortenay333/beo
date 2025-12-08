@@ -180,7 +180,7 @@ static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
     #undef CAN_EVAL
 }
 
-static Void collect_program_ (SemProgram2 *prog, Ast *node) {
+static Void collect_program_ (SemProgram *prog, Ast *node) {
     assert_dbg(node->flags & AST_CAN_EVAL);
 
     if (node->flags & AST_IS_GLOBAL_VAR) array_push(&prog->globals, node);
@@ -202,10 +202,9 @@ static Void collect_program_ (SemProgram2 *prog, Ast *node) {
     #undef C
 }
 
-static SemProgram2 *collect_program (Sem *sem, Ast *node, Mem *mem) {
-    Auto prog = mem_new(mem, SemProgram2);
+static SemProgram *collect_program (Sem *sem, Ast *node, Mem *mem) {
+    Auto prog = mem_new(mem, SemProgram);
     prog->sem = sem;
-    prog->mem = mem;
     prog->entry = node;
     array_init(&prog->globals, mem);
     array_init(&prog->types, mem);
@@ -278,7 +277,7 @@ static Result eval (Sem *sem, Ast *node) {
 
     if (val.tag == VM_REG_NIL) {
         // tmem_new(tm);
-        // SemProgram2 *prog = collect_program(sem, node, tm);
+        // SemProgram *prog = collect_program(sem, node, tm);
         return RESULT_ERROR;
     }
 
@@ -1160,10 +1159,10 @@ SemProgram *sem_check (Sem *sem, String main_file_path) {
 
     Auto prog = mem_new(sem->mem, SemProgram);
     prog->sem     = sem;
-    prog->fns     = &sem->fns;
-    prog->types   = &sem->types;
-    prog->entry   = sem->main_fn;
-    prog->globals = &sem->globals;
+    prog->fns     = sem->fns;
+    prog->types   = sem->types;
+    prog->entry   = cast(Ast*, sem->main_fn);
+    prog->globals = sem->globals;
     return prog;
 }
 
