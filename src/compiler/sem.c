@@ -306,8 +306,6 @@ static Result eval (Sem *sem, Ast *node) {
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
 
-        // @todo In order to handle array/string/objects we somehow have to
-        // pull them out of one VM and insert them into the other (main) VM...
         switch (get_type(original_entry)->tag) {
         case TYPE_FFI:
         case TYPE_ARRAY: 
@@ -315,6 +313,8 @@ static Result eval (Sem *sem, Ast *node) {
         case TYPE_STRING:
         case TYPE_TOP:
         case TYPE_VOID:
+            // @todo In order to handle array/string/objects we somehow have to
+            // pull them out of one VM and insert them into the other (main) VM...
             return error_n(sem, original_entry, "Expressions of this type cannot compile-time eval at moment.");
 
         case TYPE_BOOL:
