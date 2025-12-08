@@ -281,27 +281,49 @@ static Result eval (Sem *sem, Ast *node) {
 
     VmReg val = ast_eval(sem, node);
 
-    if (val.tag == VM_REG_NIL) {
+    if (val.tag == VM_REG_NIL) { // We need to compile for the VM in order to eval.
         tmem_new(tm);
         tmem_pin(tm, 0);
 
-        SemProgram *prog = collect_program(sem, node, tm);
+        SemProgram *prog  = collect_program(sem, node, tm);
+        Ast *original_entry = prog->entry;
 
         if (prog->entry->tag != AST_FN) {
             // @todo For now we don't actually allocate the return value
-            // token because the the backend doesn't need one, but it still
-            // feels kind of sketchy.
+            // ast node because the the backend doesn't need one, but it
+            // still feels kind of sketchy.
+            String fn_name = astr_fmt(tm, "global_var_wrapper@%lu", prog->entry->pos.first_line);
             Ast *fn  = ast_alloc(tm, AST_FN, 0);
             Ast *ret = ast_alloc(tm, AST_RETURN, 0);
+            cast(AstFn*, fn)->name = intern_str(sem->interns, fn_name);
             array_push(&cast(AstFn*, fn)->statements, ret);
             cast(AstReturn*, ret)->sem_edge = fn;
-            cast(AstReturn*, ret)->result = prog->entry;
+            cast(AstReturn*, ret)->result = (prog->entry->tag == AST_VAR_DEF) ? cast(AstVarDef*, prog->entry)->init : prog->entry;
+            array_push(&prog->fns, cast(AstFn*, fn));
             prog->entry = fn;
         }
 
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
-        vm_run(vm);
+
+        switch (get_type(original_entry)->tag) {
+        case TYPE_FFI:
+        case TYPE_ARRAY: 
+        case TYPE_RECORD:
+        case TYPE_STRING:
+        case TYPE_TOP:
+        case TYPE_VOID:
+            return error_n(sem, original_entry, "Expressions of this type cannot compile-time eval at moment.");
+
+        case TYPE_BOOL:
+        case TYPE_FLOAT:
+        case TYPE_FN: 
+        case TYPE_INT:
+            vm_run(vm);
+            val = array_get(&vm->registers, 0);
+            break;
+        }
+
         vm_destroy(vm);
     }
 

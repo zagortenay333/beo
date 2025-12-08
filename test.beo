@@ -1,12 +1,11 @@
-fn foo -> Int {
+fn foo -> String {
     .print("hello there");
-    return 42;
+    return "asdf";
 }
 
 var x = foo();
 
 fn main {
-    x += 1;
     .print(x);
 }
 
