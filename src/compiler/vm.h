@@ -124,9 +124,7 @@ istruct (CallRecord) {
 
 istruct (Vm) {
     Mem *mem;
-
-    Sem *sem;
-    SemProgram *sem_prog;
+    SemProgram *sem;
 
     VmFunction *entry;
     ArrayU8 instructions;
@@ -140,7 +138,8 @@ istruct (Vm) {
 };
 
 Vm   *vm_new               (Mem *);
-Void  vm_set_prog          (Vm *, String);
+Void  vm_set_prog          (Vm *, SemProgram *);
+Void  vm_set_prog_from_str (Vm *, String);
 Void  vm_print             (Vm *);
 Void  vm_run               (Vm *);
 Void  vm_ffi_new           (Vm *, String);

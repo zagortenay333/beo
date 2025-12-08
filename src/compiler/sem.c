@@ -181,6 +181,9 @@ static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
 }
 
 static Void collect_program_ (SemProgram *prog, Ast *node) {
+    if (node->flags & AST_VISITED) return;
+    node->flags |= AST_VISITED;
+
     assert_dbg(node->flags & AST_CAN_EVAL);
 
     if (node->flags & AST_IS_GLOBAL_VAR) array_push(&prog->globals, node);
@@ -199,6 +202,7 @@ static Void collect_program_ (SemProgram *prog, Ast *node) {
     Ast *d = get_target(node);
     if (d) C(d);
 
+    node->flags &= ~AST_VISITED;
     #undef C
 }
 
@@ -214,6 +218,8 @@ static SemProgram *collect_program (Sem *sem, Ast *node, Mem *mem) {
     return prog;
 }
 
+// If this returns VM_REG_NIL, then the node could not be 
+// evaled and should be compiled to the VM for evaling.
 static VmReg ast_eval (Sem *sem, Ast *node) {
     #define TRY(X) ({\
         VmReg val = (X);\
@@ -276,9 +282,26 @@ static Result eval (Sem *sem, Ast *node) {
     VmReg val = ast_eval(sem, node);
 
     if (val.tag == VM_REG_NIL) {
-        // tmem_new(tm);
-        // SemProgram *prog = collect_program(sem, node, tm);
-        return RESULT_ERROR;
+        tmem_new(tm);
+        tmem_pin(tm, 0);
+
+        SemProgram *prog = collect_program(sem, node, tm);
+
+        if (prog->entry->tag != AST_FN) {
+            // @todo For now we don't actually allocate the return value
+            // token because the the backend doesn't need one, but it still
+            // feels kind of sketchy.
+            Ast *fn  = ast_alloc(tm, AST_FN, 0);
+            Ast *ret = ast_alloc(tm, AST_RETURN, 0);
+            array_push(&cast(AstFn*, fn)->statements, ret);
+            cast(AstReturn*, ret)->sem_edge = fn;
+            cast(AstReturn*, ret)->result = prog->entry;
+            prog->entry = fn;
+        }
+
+        Vm *vm = vm_new(tm);
+        vm_set_prog(vm, prog);
+        vm_run(vm);
     }
 
     map_add(&sem->global_to_reg, node->id, val);

@@ -77,7 +77,7 @@ Int main (Int argc, CString *argv) {
     vm_ffi_new(vm, str("array"));
     vm_ffi_add(vm, str("array"), str("push"), push);
 
-    vm_set_prog(vm, cli.main_file_path);
+    vm_set_prog_from_str(vm, cli.main_file_path);
     vm_print(vm);
     vm_run(vm);
 }

@@ -1,4 +1,9 @@
-var x = 42 + 1;
+fn foo -> Int {
+    .print("hello there");
+    return 42;
+}
+
+var x = foo();
 
 fn main {
     x += 1;

@@ -50,7 +50,7 @@ static VmRegOp reg_push (Emitter *em) {
     if (em->next_reg > UINT8_MAX) {
         // @todo Make this a better error message.
         printf(TERM_RED("ERROR(Vm): ") "Ran out of registers.\n\n");
-        sem_print_node_out(em->vm->sem, cast(Ast*, em->fn));
+        sem_print_node_out(em->vm->sem->sem, cast(Ast*, em->fn));
         panic();
     }
 
@@ -130,9 +130,9 @@ static U32 get_fn_from_ast (Vm *vm, AstFn *ast) {
 
 // Returns index into vm->globals.
 static U32 get_global_from_ast (Vm *vm, Ast *ast) {
-    assert_always(vm->sem_prog->globals.count <= UINT32_MAX);
+    assert_always(vm->sem->globals.count <= UINT32_MAX);
 
-    array_iter (global, &vm->sem_prog->globals) {
+    array_iter (global, &vm->sem->globals) {
         if (global == ast) {
             return cast(U32, ARRAY_IDX);
         }
@@ -278,7 +278,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         VmRegOp fn_reg = emit_expression(em, n->lhs, reg_push(em));
         array_iter (arg, &n->args) emit_expression(em, arg, reg_push(em));
 
-        SemCoreTypes *core_types = sem_get_core_types(em->vm->sem);
+        SemCoreTypes *core_types = sem_get_core_types(em->vm->sem->sem);
 
         if (sem_get_type(em->vm->sem, n->lhs) == core_types->type_CFn) {
             assert_always(n->args.count <= 254);
@@ -546,22 +546,27 @@ static Void emit_fn_constant (Vm *vm, AstFn *ast) {
     array_push(&vm->constants, reg);
 }
 
-Void vm_set_prog (Vm *vm, String main_file_path) {
-    Interns *interns = interns_new(vm->mem, main_file_path);
-    vm->sem = sem_new(vm->mem, vm, interns);
-    vm->sem_prog = sem_check(vm->sem, main_file_path);
+Void vm_set_prog (Vm *vm, SemProgram *prog) {
+    vm->sem = prog;
 
-    array_iter (global, &vm->sem_prog->globals) {
-        VmReg r = sem_get_const_val(vm->sem, global);
+    array_iter (global, &vm->sem->globals) {
+        VmReg r = sem_get_const_val(vm->sem->sem, global);
         array_push(&vm->globals, r);
     }
 
-    assert_dbg(vm->sem_prog->entry->tag == AST_FN);
-    emit_fn_constant(vm, cast(AstFn*, vm->sem_prog->entry));
+    assert_dbg(vm->sem->entry->tag == AST_FN);
+    emit_fn_constant(vm, cast(AstFn*, vm->sem->entry));
     vm->entry = array_ref(&vm->constants, 0)->fn;
-    array_iter (fn, &vm->sem_prog->fns) if (cast(Ast*, fn) != vm->sem_prog->entry) emit_fn_constant(vm, fn);
+    array_iter (fn, &vm->sem->fns) if (cast(Ast*, fn) != vm->sem->entry) emit_fn_constant(vm, fn);
 
-    array_iter (fn, &vm->sem_prog->fns) emit_fn_bytecode(vm, fn);
+    array_iter (fn, &vm->sem->fns) emit_fn_bytecode(vm, fn);
+}
+
+Void vm_set_prog_from_str (Vm *vm, String main_file_path) {
+    Interns *interns = interns_new(vm->mem, main_file_path);
+    Sem *sem         = sem_new(vm->mem, vm, interns);
+    SemProgram *prog = sem_check(sem, main_file_path);
+    vm_set_prog(vm, prog);
 }
 
 Void vm_print (Vm *vm) {
