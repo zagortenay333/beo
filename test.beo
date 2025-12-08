@@ -1,6 +1,6 @@
 fn foo -> Int { return 42; }
 
-var x = foo();
+var x = 42;
 
 fn main {
     var arr = String[];

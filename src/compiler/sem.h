@@ -33,7 +33,7 @@ ienum (TypeTag, U8) {
     #undef X
 };
 
-typedef U64 TypeId;
+typedef U32 TypeId;
 
 istruct (Type)        { TypeTag tag; TypeFlags flags; TypeId id; };
 istruct (TypeArray)   { Type type; Ast *node; Type *element; };
@@ -57,6 +57,15 @@ istruct (SemCoreTypes) {
     Type *type_Void;
     Type *type_Float;
     Type *type_String;
+};
+
+istruct (SemProgram2) {
+    Sem *sem;
+    Mem *mem;
+    Ast *entry;
+    ArrayAstFn fns;
+    ArrayType types;
+    ArrayAst globals;
 };
 
 istruct (SemProgram) {

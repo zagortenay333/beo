@@ -180,12 +180,55 @@ static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
     #undef CAN_EVAL
 }
 
-static Void ast_eval (Sem *sem, Ast *node) {
+static Void collect_program_ (SemProgram2 *prog, Ast *node) {
+    assert_dbg(node->flags & AST_CAN_EVAL);
+
+    if (node->flags & AST_IS_GLOBAL_VAR) array_push(&prog->globals, node);
+    if (node->tag == AST_FN) array_push(&prog->fns, cast(AstFn*, node));
+
+    Type *t = get_type(node);
+    if (! (t->flags & TYPE_VISITED)) {
+        t->flags |= TYPE_VISITED;
+        array_push(&prog->types, t);
+    }
+
+    #define C(child, ...) collect_program_(prog, child)
+
+    AST_VISIT_CHILDREN(node, C);
+
+    Ast *d = get_target(node);
+    if (d) C(d);
+
+    #undef C
+}
+
+static SemProgram2 *collect_program (Sem *sem, Ast *node, Mem *mem) {
+    Auto prog = mem_new(mem, SemProgram2);
+    prog->sem = sem;
+    prog->mem = mem;
+    prog->entry = node;
+    array_init(&prog->globals, mem);
+    array_init(&prog->types, mem);
+    array_init(&prog->fns, mem);
+    collect_program_(prog, node);
+    array_iter (t, &prog->types) t->flags &= ~TYPE_VISITED;
+    return prog;
+}
+
+static Bool ast_eval (Sem *sem, Ast *node) {
+    return false;
 }
 
 static Result eval (Sem *sem, Ast *node) {
     try(can_eval(sem, node, false));
-    // ast_eval(sem, node);
+
+    Bool ok = ast_eval(sem, node);
+
+    if (! ok) {
+        // tmem_new(tm);
+        // SemProgram2 *prog = collect_program(sem, node, tm);
+    }
+
     return RESULT_OK;
 }
 
