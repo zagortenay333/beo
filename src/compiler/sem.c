@@ -306,6 +306,8 @@ static Result eval (Sem *sem, Ast *node) {
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
 
+        // @todo In order to handle array/string/objects we somehow have to
+        // pull them out of one VM and insert them into the other (main) VM...
         switch (get_type(original_entry)->tag) {
         case TYPE_FFI:
         case TYPE_ARRAY: 
