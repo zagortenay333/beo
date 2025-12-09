@@ -2,7 +2,11 @@ record Foo {
     x: Int;
 }
 
-var x = Foo{ x = 42 };
+fn foo (x: Int) -> Foo {
+    return Foo{ x = x };
+}
+
+var x = foo(69);
 
 fn main {
     .print(x);
