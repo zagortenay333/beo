@@ -145,8 +145,8 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
 }
 
 // Top call should have allow_local_var = false.
-static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
-    if (! (node->flags & AST_CHECKED)) return RESULT_ERROR;
+static Result can_eval_ (Sem *sem, Ast *node, Bool allow_local_var) {
+    if (! (node->flags & AST_CHECKED)) return RESULT_DEFER;
     if (node->flags & (AST_VISITED | AST_CAN_EVAL)) return RESULT_OK;
 
     // Local variables cannot be compile-time evaled, but when we
@@ -165,7 +165,7 @@ static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
         return R;\
     }
 
-    #define CAN_EVAL(child, ...) try(can_eval(sem, child, allow_local_var), RETURN(R));\
+    #define CAN_EVAL(child, ...) try(can_eval_(sem, child, allow_local_var), RETURN(R));\
 
     AST_VISIT_CHILDREN(node, CAN_EVAL);
 
@@ -180,6 +180,47 @@ static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
 
     #undef RETURN
     #undef CAN_EVAL
+}
+
+static Result can_eval (Sem *sem, Ast *node) {
+    Result result = can_eval_(sem, node, false);
+
+    if (result == RESULT_OK) {
+        Type *t = get_type(node);
+
+        switch (t->tag) {
+        case TYPE_BOOL: break;
+        case TYPE_FLOAT: break;
+        case TYPE_FN: break;
+        case TYPE_INT: break;
+        case TYPE_STRING: break;
+
+        case TYPE_ARRAY: {
+            Type *elem = cast(TypeArray*, t)->element;
+            if (! (elem->flags & TYPE_IS_PRIMITIVE)) result = RESULT_ERROR;
+        } break;
+
+        case TYPE_RECORD: {
+            AstRecord *rec = cast(TypeRecord*, t)->node;
+            array_iter (m, &rec->members) {
+                if (! (get_type(m)->flags & TYPE_IS_PRIMITIVE)) {
+                    result = RESULT_ERROR;
+                    break;
+                }
+            }
+        } break;
+
+        case TYPE_FFI:
+        case TYPE_TOP:
+        case TYPE_VOID:
+            result = RESULT_ERROR;
+            break;
+        }
+    }
+
+    return (result == RESULT_ERROR) ?
+           error_n(sem, node, "Only expressions with primitive types and arrays or records of primitive types can eval at compile time.") :
+           result;
 }
 
 static Void collect_program_ (SemProgram *prog, Ast *node) {
@@ -279,7 +320,7 @@ static VmReg ast_eval (Sem *sem, Ast *node) {
 }
 
 static Result eval (Sem *sem, Ast *node) {
-    try(can_eval(sem, node, false));
+    try(can_eval(sem, node));
 
     VmReg val = ast_eval(sem, node);
 
@@ -1104,8 +1145,8 @@ static Result check_node (Sem *sem, Ast *node) {
         Auto n = cast(AstBaseBinary*, node);
         Type *t1 = try_get_type_v(n->op1);
         Type *t2 = try_get_type_v(n->op2);
-        if (! (t1->flags & TYPE_CAN_BE_IN_REG)) return error_nt(sem, n->op1, t1, "expected primitive type.");
-        if (! (t2->flags & TYPE_CAN_BE_IN_REG)) return error_nt(sem, n->op2, t2, "expected primitive type.");
+        if (! (t1->flags & TYPE_IS_PRIMITIVE)) return error_nt(sem, n->op1, t1, "expected primitive type.");
+        if (! (t2->flags & TYPE_IS_PRIMITIVE)) return error_nt(sem, n->op2, t2, "expected primitive type.");
         try(match_vv(sem, &n->op1, &n->op2));
         set_type(node, sem->core_types.type_Bool);
         return RESULT_OK;

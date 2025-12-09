@@ -1248,6 +1248,12 @@ VmReg vm_reg_not (VmReg r) {
 // main VM (the one that runs the main program) can use it.
 //
 // See the eval() function in the sem.c module for usage.
+//
+// IMPORTANT: This function will do a shallow copy of arrays
+// and records! To deal with this the semantic analyser must
+// check that the expression to eval has either a primitive
+// type or array/record of primitive types. See the function
+// can_eval() in the sem.c module.
 VmReg vm_transfer_result (Vm *to, Vm *from) {
     // @todo Right now we assume that the very first register
     // in the vm->registers array is the one with the return

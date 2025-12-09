@@ -11,21 +11,21 @@ istruct (Sem);
 // X(TypeTag, typedef, TypeFlags)
 #define EACH_TYPE(X)\
     X(TYPE_ARRAY, TypeArray, 0)\
-    X(TYPE_BOOL, TypeBool, TYPE_CAN_BE_IN_REG)\
+    X(TYPE_BOOL, TypeBool, TYPE_IS_PRIMITIVE)\
     X(TYPE_FFI, TypeFfi, TYPE_IS_SPECIAL)\
-    X(TYPE_FLOAT, TypeFloat, TYPE_CAN_BE_IN_REG)\
-    X(TYPE_FN, TypeFn, TYPE_CAN_BE_IN_REG)\
-    X(TYPE_INT, TypeInt, TYPE_CAN_BE_IN_REG)\
+    X(TYPE_FLOAT, TypeFloat, TYPE_IS_PRIMITIVE)\
+    X(TYPE_FN, TypeFn, 0)\
+    X(TYPE_INT, TypeInt, TYPE_IS_PRIMITIVE)\
     X(TYPE_RECORD, TypeRecord, 0)\
     X(TYPE_STRING, TypeString, 0)\
     X(TYPE_TOP, TypeTop, TYPE_IS_SPECIAL)\
     X(TYPE_VOID, TypeVoid, TYPE_IS_SPECIAL)
 
 fenum (TypeFlags, U16) {
-    TYPE_CAN_BE_IN_REG = flag(0),
-    TYPE_VISITED       = flag(1),
-    TYPE_IS_DISTINCT   = flag(2),
-    TYPE_IS_SPECIAL    = flag(3),
+    TYPE_VISITED       = flag(0),
+    TYPE_IS_DISTINCT   = flag(1),
+    TYPE_IS_SPECIAL    = flag(2),
+    TYPE_IS_PRIMITIVE  = flag(3),
 };
 
 ienum (TypeTag, U8) {

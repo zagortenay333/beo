@@ -1,5 +1,9 @@
-fn foo () -> []String {
-    return ["asdf"];
+record Foo {
+    x: String;
+}
+
+fn foo () -> Foo {
+    return Foo{ x = "sdf" };
 }
 
 var x = foo();
