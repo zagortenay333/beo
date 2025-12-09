@@ -95,6 +95,7 @@ istruct (VmReg) {
         F64 f64;
         Bool boolean;
         VmFunction *fn;
+        AstFn *fn_ast;
         Void *cfn; // Cast to VmCFunction.
         VmObj *obj;
     };

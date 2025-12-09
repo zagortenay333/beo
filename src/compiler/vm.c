@@ -1248,11 +1248,55 @@ VmReg vm_reg_not (VmReg r) {
 // main VM (the one that runs the main program) can use it.
 //
 // See the eval() function in the sem.c module for usage.
-//
-// @todo Right now we assume that the very first register
-// in the vm->registers array is the one with the return
-// value. Although this is true and the gc won't mess with
-// it, it still feels hacky and a more formal interface
-// would be welcome.
 VmReg vm_transfer_result (Vm *to, Vm *from) {
+    // @todo Right now we assume that the very first register
+    // in the vm->registers array is the one with the return
+    // value. Although this is true and the gc won't mess with
+    // it, it still feels hacky and a more formal interface
+    // would be welcome.
+    VmReg reg = array_get(&from->registers, 0);
+
+    switch (reg.tag) {
+    case VM_REG_NIL:
+    case VM_REG_BOOL:
+    case VM_REG_FLOAT:
+    case VM_REG_CFN:
+    case VM_REG_INT:
+        // These are easy to transfer since the entire value
+        // sits in the registers.
+        return reg;
+
+    case VM_REG_FN: {
+        // We cannot copy the VmFunction struct yet since those
+        // are created in the vm_set_prog() function. See the
+        // code in that function for more info.
+        reg.fn_ast = reg.fn->ast;
+        return reg;
+    }
+
+    case VM_REG_OBJ: {
+        switch (reg.obj->tag) {
+        case VM_OBJ_ARRAY: {
+            Auto o = cast(VmObjArray*, reg.obj);
+            Auto new_array = cast(VmObjArray*, gc_new_array(to));
+            array_push_many(&new_array->array, &o->array);
+            return (VmReg){ .tag=VM_REG_OBJ, .obj=cast(VmObj*, new_array) };
+        }
+
+        case VM_OBJ_STRING: {
+            Auto o = cast(VmObjString*, reg.obj);
+            Auto new_str = cast(VmObjString*, gc_new_string(to, o->string.count));
+            memcpy(new_str->string.data, o->string.data, o->string.count);
+            return (VmReg){ .tag=VM_REG_OBJ, .obj=cast(VmObj*, new_str) };
+        }
+
+        case VM_OBJ_RECORD: {
+            Auto o = cast(VmObjRecord*, reg.obj);
+            Auto new_rec = cast(VmObjRecord*, gc_new_record(to));
+            map_iter (slot, &o->record) map_add(&new_rec->record, slot->key, slot->val);
+            return (VmReg){ .tag=VM_REG_OBJ, .obj=cast(VmObj*, new_rec) };
+        }
+        }
+    } break;
+    }
 }
