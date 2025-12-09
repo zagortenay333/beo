@@ -550,7 +550,7 @@ Void vm_set_prog (Vm *vm, SemProgram *prog) {
     vm->sem = prog;
 
     array_iter (global, &vm->sem->globals) {
-        VmReg r = sem_get_const_val(vm->sem->sem, global);
+        VmReg r = sem_get_const_val(vm->sem->sem, (global->tag == AST_VAR_DEF) ? cast(AstVarDef*, global)->init : global);
         array_push(&vm->globals, r);
     }
 

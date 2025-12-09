@@ -1,8 +1,8 @@
-fn foo () -> []Int {
-    return [1];
+fn foo () -> []String {
+    return ["asdf"];
 }
 
-var x = y;
+var x = foo();
 
 fn main {
     .print(x);
