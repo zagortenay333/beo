@@ -1,12 +1,8 @@
 record Foo {
-    x: String;
+    x: Int;
 }
 
-fn foo () -> Foo {
-    return Foo{ x = "sdf" };
-}
-
-var x = foo();
+var x = Foo{ x = 42 };
 
 fn main {
     .print(x);
