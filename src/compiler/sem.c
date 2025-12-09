@@ -191,9 +191,12 @@ static Result can_eval (Sem *sem, Ast *node) {
         switch (t->tag) {
         case TYPE_BOOL: break;
         case TYPE_FLOAT: break;
-        case TYPE_FN: break;
         case TYPE_INT: break;
         case TYPE_STRING: break;
+
+        case TYPE_FN: {
+            result = RESULT_ERROR;
+        } break;
 
         case TYPE_ARRAY: {
             Type *elem = cast(TypeArray*, t)->element;
@@ -838,7 +841,7 @@ static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *cal
 
     array_iter (n1, target_args, *) {
         Ast **n2 = array_ref(call_args, ARRAY_IDX);
-        Result r = match_vv(sem, n1, n2);
+        Result r = match_nv(sem, *n1, n2);
         if (r != RESULT_OK) return r;
     }
 
@@ -1049,15 +1052,17 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_FN_TYPE: {
+        Auto n = cast(AstBaseFn*, node);
+        array_iter (a, &n->inputs) try_get_type_t(a);
+        if (n->output) try_get_type_t(n->output);
+        Type *t = alloc_type_fn(sem, n);
+        set_type(node, t);
+        return RESULT_OK;
+    }
+
     case AST_FN: {
         Auto n = cast(AstBaseFn*, node);
-
-        array_iter (a, &n->inputs) {
-            assert_dbg(a->tag == AST_VAR_DEF);
-            Ast *d = cast(AstVarDef*, a)->init;
-            if (d) return error_n(sem, d, "Fn arg inits not supported yet.");
-        }
-
         if (n->output) try_get_type_t(n->output);
         Type *t = alloc_type_fn(sem, n);
         set_type(node, t);

@@ -2,13 +2,19 @@ record Foo {
     x: Int;
 }
 
-fn foo (x: Int) -> Foo {
-    return Foo{ x = x };
+fn foo (x: Int) -> []Int {
+    .print("asdf");
+    return [1, x];
 }
 
 var x = foo(69);
 
 fn main {
+    fn bar -> (Fn (Int) -> []Int) {
+        return foo;
+    }
+
+    var x = bar()(42);
     .print(x);
 }
 

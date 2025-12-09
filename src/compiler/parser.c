@@ -200,6 +200,24 @@ static Ast *parse_fn (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_fn_type (Parser *par) {
+    Auto node = cast(AstBaseFn*, make_node(par, AstFnType));
+    lex_eat_this(lex, TOKEN_FN_TYPE);
+
+    if (lex_try_eat(lex, '(')) {
+        while (! lex_try_peek(lex, ')')) {
+            if (lex_try_peek(lex, TOKEN_IDENT) && lex_try_peek_nth(lex, 2, ':')) { lex_eat(lex); lex_eat(lex); }
+            array_push(&node->inputs, parse_expression(par, 0));
+            if (! lex_try_eat(lex, ',')) break;
+        }
+
+        lex_eat_this(lex, ')');
+    }
+
+    if (lex_try_eat(lex, TOKEN_ARROW)) node->output = parse_expression(par, 0);
+    return complete_node(par, node);
+}
+
 static Ast *parse_array_literal_or_type (Parser *par) {
     SrcPos start = lex_peek(lex)->pos;
     lex_eat_this(lex, '[');
@@ -432,6 +450,7 @@ static Ast *parse_expression_without_lhs (Parser *par) {
     case TOKEN_F64_LITERAL:    return parse_float_literal(par);
     case TOKEN_FALSE:          return parse_bool_literal(par, TOKEN_FALSE);
     case TOKEN_FN:             return parse_fn(par);
+    case TOKEN_FN_TYPE:        return parse_fn_type(par);
     case TOKEN_STRING_LITERAL: return parse_string_literal(par);
     case TOKEN_TRUE:           return parse_bool_literal(par, TOKEN_TRUE);
     case TOKEN_U64_LITERAL:    return parse_int_literal(par);

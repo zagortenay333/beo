@@ -1273,10 +1273,9 @@ VmReg vm_transfer_result (Vm *to, Vm *from) {
         return reg;
 
     case VM_REG_FN: {
-        // We cannot copy the VmFunction struct yet since those
-        // are created in the vm_set_prog() function. See the
-        // code in that function for more info.
-        reg.fn_ast = reg.fn->ast;
+        // @todo We should add support for transfering functions
+        // as well, but it's somwhat annoying to do...
+        reg.tag = VM_REG_NIL;
         return reg;
     }
 

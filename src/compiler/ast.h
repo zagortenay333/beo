@@ -41,6 +41,7 @@ istruct (Interns);
     X(AST_FILE, AstFile, 0, AST_CREATES_SCOPE)\
     X(AST_FLOAT_LITERAL, AstFloatLiteral, 0, AST_IS_LITERAL)\
     X(AST_FN, AstFn, AST_BASE_FN, AST_IS_READ_ONLY | AST_CREATES_TYPE | AST_CREATES_SCOPE | AST_IS_LITERAL)\
+    X(AST_FN_TYPE, AstFnType, AST_BASE_FN, AST_IS_TYPE | AST_CREATES_TYPE)\
     X(AST_GREATER, AstGreater, AST_BASE_BINARY, 0)\
     X(AST_GREATER_EQUAL, AstGreaterEqual, AST_BASE_BINARY, 0)\
     X(AST_IDENT, AstIdent, 0, AST_IS_LVALUE)\
@@ -163,6 +164,7 @@ istruct (AstEqual)          { AstBaseBinary base; };
 istruct (AstFile)           { Ast base; IString *path; String content; ArrayAst statements; };
 istruct (AstFloatLiteral)   { Ast base; F64 val; };
 istruct (AstFn)             { AstBaseFn base; IString *name; ArrayAst statements; };
+istruct (AstFnType)         { AstBaseFn base; };
 istruct (AstGreater)        { AstBaseBinary base; };
 istruct (AstGreaterEqual)   { AstBaseBinary base; };
 istruct (AstIdent)          { Ast base; IString *name; Ast *sem_edge; };
