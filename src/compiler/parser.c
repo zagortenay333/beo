@@ -643,7 +643,8 @@ static Ast *parse_top_statement (Parser *par) {
     case TOKEN_FN:     return parse_fn(par); break;
     case TOKEN_VAR: {
        Ast *result = parse_var_def(par, true, true);
-       result->flags |= (AST_IS_GLOBAL_VAR | AST_MUST_EVAL);
+       result->flags |= AST_IS_GLOBAL_VAR;
+       cast(AstVarDef*, result)->init->flags |= AST_MUST_EVAL;
        return result;
     }
     default: return 0;

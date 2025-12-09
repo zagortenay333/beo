@@ -146,6 +146,7 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
 
 // Top call should have allow_local_var = false.
 static Result can_eval (Sem *sem, Ast *node, Bool allow_local_var) {
+    if (! (node->flags & AST_CHECKED)) return RESULT_ERROR;
     if (node->flags & (AST_VISITED | AST_CAN_EVAL)) return RESULT_OK;
 
     // Local variables cannot be compile-time evaled, but when we
@@ -191,7 +192,7 @@ static Void collect_program_ (SemProgram *prog, Ast *node) {
     if (node->tag == AST_FN) array_push(&prog->fns, cast(AstFn*, node));
 
     Type *t = get_type(node);
-    if (! (t->flags & TYPE_VISITED)) {
+    if (t && !(t->flags & TYPE_VISITED)) {
         t->flags |= TYPE_VISITED;
         array_push(&prog->types, t);
     }
@@ -1000,7 +1001,7 @@ static Result check_node (Sem *sem, Ast *node) {
             if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->init, t, "expected concrete type");
         }
 
-        if ((node->flags & AST_IS_GLOBAL_VAR) && !(node->flags & AST_EVALED)) {
+        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) {
             return RESULT_DEFER;
         }
 

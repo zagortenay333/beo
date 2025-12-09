@@ -1,9 +1,8 @@
-fn foo -> String {
-    .print("hello there");
-    return "asdfsaf";
+fn foo () -> []Int {
+    return [1];
 }
 
-var x = foo();
+var x = y;
 
 fn main {
     .print(x);
@@ -11,9 +10,6 @@ fn main {
 
 /*
 fn main {
-    foo.print1(1, 2, 3, 4);
-    bar.print2(1, 2, 3, 4);
-
     test_var_defs();
     test_fn_calls();
     test_ifs();
