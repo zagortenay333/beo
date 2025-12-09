@@ -1,20 +1,15 @@
-record Foo {
-    x: Int;
-}
-
 fn foo (x: Int) -> []Int {
     .print("asdf");
     return [1, x];
 }
 
-var x = foo(69);
+fn bar -> (Fn (Int) -> []Int) {
+    return foo;
+}
+
+var x = bar();
 
 fn main {
-    fn bar -> (Fn (Int) -> []Int) {
-        return foo;
-    }
-
-    var x = bar()(42);
     .print(x);
 }
 
@@ -65,11 +60,27 @@ fn test_records {
 }
 
 fn test_fn_calls {
-    .print(fib(1));
+    {
+        .print(fib(1));
 
-    fn fib (n: Int) -> Int {
-        if n <= 1 do return n;
-        return fib(n-1) + fib(n-2);
+        fn fib (n: Int) -> Int {
+            if n <= 1 do return n;
+            return fib(n-1) + fib(n-2);
+        }
+    }
+
+    {
+        fn foo (x: Int) -> []Int {
+            .print("asdf");
+            return [1, x];
+        }
+
+        fn bar -> (Fn (Int) -> []Int) {
+            return foo;
+        }
+
+        var x = bar()(42);
+        .print(x);
     }
 }
 

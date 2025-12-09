@@ -222,7 +222,7 @@ static Result can_eval (Sem *sem, Ast *node) {
     }
 
     return (result == RESULT_ERROR) ?
-           error_n(sem, node, "Only expressions with primitive types and arrays or records of primitive types can eval at compile time.") :
+           error_n(sem, node, "Only expressions with type primitive, string, or array/record of primitive types can eval at compile time.") :
            result;
 }
 
@@ -837,7 +837,9 @@ static Result check_is_read_only (Sem *sem, Ast *n) {
 }
 
 static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
-    if (target_args->count != call_args->count) return error_nn(sem, target, caller, "Argument count in call doesn't match target fn.");
+    if (target_args->count != call_args->count) {
+        return error_nn(sem, target, caller, "Argument count in call doesn't match target fn.");
+    }
 
     array_iter (n1, target_args, *) {
         Ast **n2 = array_ref(call_args, ARRAY_IDX);
