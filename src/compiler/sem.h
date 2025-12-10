@@ -16,6 +16,7 @@ istruct (Sem);
     X(TYPE_FLOAT, TypeFloat, TYPE_IS_PRIMITIVE)\
     X(TYPE_FN, TypeFn, 0)\
     X(TYPE_INT, TypeInt, TYPE_IS_PRIMITIVE)\
+    X(TYPE_OPTION, TypeOption, 0)\
     X(TYPE_RECORD, TypeRecord, 0)\
     X(TYPE_STRING, TypeString, 0)\
     X(TYPE_TOP, TypeTop, TYPE_IS_SPECIAL)\
@@ -44,6 +45,7 @@ istruct (TypeFfi)     { Type type; String name; VmObjRecord *obj; };
 istruct (TypeFloat)   { Type type; };
 istruct (TypeFn)      { Type type; AstBaseFn *node; };
 istruct (TypeInt)     { Type type; };
+istruct (TypeOption)  { Type type; Type *underlying; };
 istruct (TypeRecord)  { Type type; AstRecord *node; };
 istruct (TypeString)  { Type type; };
 istruct (TypeTop)     { Type type; };

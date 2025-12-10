@@ -86,6 +86,7 @@ static U64 precedence_of (TokenTag token_tag) {
     case '{':
         return 9;
 
+    case prefix('?'):
     case prefix('-'):
     case prefix('.'):
     case prefix('!'):
@@ -417,12 +418,16 @@ static Ast *parse_builtin_print (Parser *par) {
 
 static Ast *parse_builtin_call (Parser *par) {
     Token *token = lex_peek_nth(lex, 2);
-
     if (token->tag != TOKEN_IDENT) par_error_pos(par, token->pos, "Expected identifier.");
-
     if (token->str == par->interns->builtin_print) return parse_builtin_print(par);
-
     par_error(par, "Unknown builtin.");
+}
+
+static Ast *parse_option_type (Parser *par) {
+    Auto node = make_node(par, AstOptionType);
+    lex_eat_this(lex, '?');
+    cast(AstBaseUnary*, node)->op = parse_expression(par, prefix('?'));
+    return complete_node(par, node);
 }
 
 static Ast *parse_expression_with_lhs (Parser *par, Ast *lhs) {
@@ -450,6 +455,7 @@ static Ast *parse_expression_with_lhs (Parser *par, Ast *lhs) {
 
 static Ast *parse_expression_without_lhs (Parser *par) {
     switch (lex_peek(lex)->tag) {
+    case '?':                  return parse_option_type(par);
     case '-':                  return parse_negate(par);
     case '(':                  return parse_tuple_or_parens(par);
     case '[':                  return parse_array_literal_or_type(par);

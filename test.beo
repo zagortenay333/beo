@@ -1,8 +1,6 @@
 fn main {
-    var x = (1, "asdf");
-    .print(x);
-    .print(x[0]);
-    .print(x[1]);
+    var x: ?Int = 42;
+    var y: Int = x;
 }
 
 /*
@@ -11,8 +9,33 @@ fn main {
     test_fn_calls();
     test_ifs();
     test_records();
+    test_tuples();
     test_while();
     register_stress_test();
+}
+
+fn test_tuples {
+    {
+        var x = (1, "asdf");
+        .print(x);
+        .print(x[0]);
+        .print(x[1]);
+    }
+
+    {
+        fn foo (x:Int, y:String) -> (Int, String) {
+            return (x+1, y);
+        }
+
+        .print(foo(42, "hello"));
+    }
+
+    {
+        var x: (Int, String) = (42, "asf");
+        fn foo (x: (Int, String)) { x[0] += 1; }
+        foo(x);
+        .print(x);
+    }
 }
 
 fn test_var_defs {

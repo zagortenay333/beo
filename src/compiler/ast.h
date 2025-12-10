@@ -25,14 +25,15 @@ istruct (Interns);
 // X(AstTag, type, bases, flags)
 #define EACH_AST_NODE(X)\
     X(AST_ADD, AstAdd, AST_BASE_BINARY, 0)\
-    X(AST_ARRAY_LITERAL, AstArrayLiteral, 0, AST_CREATES_TYPE | AST_IS_LITERAL)\
-    X(AST_ARRAY_TYPE, AstArrayType, 0, AST_IS_TYPE | AST_CREATES_TYPE)\
+    X(AST_ARRAY_LITERAL, AstArrayLiteral, 0, AST_IS_LITERAL)\
+    X(AST_ARRAY_TYPE, AstArrayType, 0, AST_IS_TYPE)\
     X(AST_ASSIGN, AstAssign, AST_BASE_BINARY, 0)\
     X(AST_BLOCK, AstBlock, 0, AST_CREATES_SCOPE)\
     X(AST_BOOL_LITERAL, AstBoolLiteral, 0, AST_IS_LITERAL)\
     X(AST_BREAK, AstBreak, 0, 0)\
     X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
+    X(AST_CAST, AstCast, 0, 0)\
     X(AST_CONTINUE, AstContinue, 0, 0)\
     X(AST_DIV, AstDiv, AST_BASE_BINARY, 0)\
     X(AST_DOT, AstDot, 0, 0)\
@@ -40,8 +41,8 @@ istruct (Interns);
     X(AST_EQUAL, AstEqual, AST_BASE_BINARY, 0)\
     X(AST_FILE, AstFile, 0, AST_CREATES_SCOPE)\
     X(AST_FLOAT_LITERAL, AstFloatLiteral, 0, AST_IS_LITERAL)\
-    X(AST_FN, AstFn, AST_BASE_FN, AST_IS_READ_ONLY | AST_CREATES_TYPE | AST_CREATES_SCOPE | AST_IS_LITERAL)\
-    X(AST_FN_TYPE, AstFnType, AST_BASE_FN, AST_IS_TYPE | AST_CREATES_TYPE)\
+    X(AST_FN, AstFn, AST_BASE_FN, AST_IS_READ_ONLY | AST_CREATES_SCOPE | AST_IS_LITERAL)\
+    X(AST_FN_TYPE, AstFnType, AST_BASE_FN, AST_IS_TYPE)\
     X(AST_GREATER, AstGreater, AST_BASE_BINARY, 0)\
     X(AST_GREATER_EQUAL, AstGreaterEqual, AST_BASE_BINARY, 0)\
     X(AST_IDENT, AstIdent, 0, AST_IS_LVALUE)\
@@ -57,7 +58,8 @@ istruct (Interns);
     X(AST_NEGATE, AstNegate, AST_BASE_UNARY, 0)\
     X(AST_NOT, AstNot, AST_BASE_UNARY, 0)\
     X(AST_NOT_EQUAL, AstNotEqual, AST_BASE_BINARY, 0)\
-    X(AST_RECORD, AstRecord, 0, AST_IS_TYPE | AST_CREATES_TYPE | AST_CREATES_SCOPE)\
+    X(AST_OPTION_TYPE, AstOptionType, AST_BASE_UNARY, AST_IS_TYPE)\
+    X(AST_RECORD, AstRecord, 0, AST_IS_TYPE | AST_CREATES_SCOPE)\
     X(AST_RECORD_LITERAL, AstRecordLiteral, 0, AST_IS_LITERAL)\
     X(AST_RECORD_LIT_INIT, AstRecordLitInit, 0, 0)\
     X(AST_RETURN, AstReturn, 0, 0)\
@@ -100,18 +102,17 @@ fenum (AstFlags, U64) {
     AST_CAN_EVAL            = flag(1),
     AST_CHECKED             = flag(2),
     AST_CREATES_SCOPE       = flag(3),
-    AST_CREATES_TYPE        = flag(4),
-    AST_EVALED              = flag(5),
-    AST_IS_FN_ARG           = flag(6),
-    AST_IS_GLOBAL_VAR       = flag(7),
-    AST_IS_LITERAL          = flag(8),
-    AST_IS_LOCAL_VAR        = flag(9),
-    AST_IS_LVALUE           = flag(10),
-    AST_IS_READ_ONLY        = flag(11),
-    AST_IS_SEALED_SCOPE     = flag(12),
-    AST_IS_TYPE             = flag(13),
-    AST_MUST_EVAL           = flag(14),
-    AST_VISITED             = flag(15),
+    AST_EVALED              = flag(4),
+    AST_IS_FN_ARG           = flag(5),
+    AST_IS_GLOBAL_VAR       = flag(6),
+    AST_IS_LITERAL          = flag(7),
+    AST_IS_LOCAL_VAR        = flag(8),
+    AST_IS_LVALUE           = flag(9),
+    AST_IS_READ_ONLY        = flag(10),
+    AST_IS_SEALED_SCOPE     = flag(11),
+    AST_IS_TYPE             = flag(12),
+    AST_MUST_EVAL           = flag(13),
+    AST_VISITED             = flag(14),
 
     // These flags are set by the Sem module.
     AST_SEM_FLAGS = AST_CHECKED | AST_ADDED_TO_CHECK_LIST,
@@ -157,6 +158,7 @@ istruct (AstBoolLiteral)    { Ast base; Bool val; };
 istruct (AstBreak)          { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstBuiltinPrint)   { AstBaseUnary base; };
 istruct (AstCall)           { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
+istruct (AstCast)           { Ast base; Ast *to, *expr; };
 istruct (AstContinue)       { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstDiv)            { AstBaseBinary base; };
 istruct (AstDot)            { Ast base; Ast *lhs, *sem_edge; IString *rhs; };
@@ -181,6 +183,7 @@ istruct (AstMul)            { AstBaseBinary base; };
 istruct (AstNegate)         { AstBaseUnary base; };
 istruct (AstNot)            { AstBaseUnary base; };
 istruct (AstNotEqual)       { AstBaseBinary base; };
+istruct (AstOptionType)     { AstBaseUnary base; };
 istruct (AstRecord)         { Ast base; IString *name; ArrayAst members; };
 istruct (AstRecordLitInit)  { Ast base; IString *name; Ast *val, *sem_edge; };
 istruct (AstRecordLiteral)  { Ast base; Ast *lhs; ArrayAstRecordLitInit inits; };
@@ -275,6 +278,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_ARRAY_TYPE:       FM(F, AstArrayType, element); break;\
     case AST_BLOCK:            AM(A, I, AstBlock, statements); break;\
     case AST_CALL:             AM(A, I, AstCall, args); FM(F, AstCall, lhs); break;\
+    case AST_CAST:             FM(F, AstCast, to); FM(F, AstCast, expr); break;\
     case AST_DOT:              FM(F, AstDot, lhs); break;\
     case AST_FILE:             AM(A, I, AstFile, statements); break;\
     case AST_FN:               AM(A, I, AstFn, statements); break;\

@@ -15,6 +15,12 @@ istruct (MatchPair) {
     Type *t2;
 };
 
+ienum (Subtype, U8) {
+    SUBTYPE_ANY_WAY, // (A > B) or (A < B)
+    SUBTYPE_ONE_WAY, // (A > B)
+    SUBTYPE_TWO_WAY, // (A > B) and (A < B)
+};
+
 istruct (Sem) {
     Mem *mem;
     Vm *vm;
@@ -57,6 +63,7 @@ static Result match_nv (Sem *sem, Ast *n, Ast **v);
 static Result match_nc (Sem *sem, Ast *n, Ast *c);
 static Result match_tt (Sem *sem, Type *t1, Type *t2);
 static Result match_tv (Sem *sem, Type *t, Ast **v);
+static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2);
 static Void set_const_val (Sem *sem, Ast *node, VmReg reg);
 static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope);
 static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node);
@@ -188,12 +195,16 @@ static Result can_eval (Sem *sem, Ast *node) {
     if (result == RESULT_OK) {
         Type *t = get_type(node);
 
-        switch (t->tag) {
+        again: switch (t->tag) {
         case TYPE_BOOL: break;
         case TYPE_FLOAT: break;
         case TYPE_INT: break;
         case TYPE_STRING: break;
         case TYPE_VOID: break;
+
+        case TYPE_OPTION:
+            t = cast(TypeOption*, t)->underlying;
+            goto again;
 
         case TYPE_FN: {
             result = RESULT_ERROR;
@@ -389,6 +400,12 @@ static Type *alloc_type (Sem *sem, TypeTag tag) {
     return type;
 }
 
+static Type *alloc_type_option (Sem *sem, Type *underlying) {
+    Auto t = cast(TypeOption*, alloc_type(sem, TYPE_OPTION));
+    t->underlying = underlying;
+    return cast(Type*, t);
+}
+
 static Type *alloc_type_fn (Sem *sem, AstBaseFn *n) {
     Auto t = cast(TypeFn*, alloc_type(sem, TYPE_FN));
     t->node = n;
@@ -526,6 +543,11 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
     case TYPE_FLOAT:  astr_push_cstr(astr, "Float"); break;
     case TYPE_INT:    astr_push_cstr(astr, "Int"); break;
     case TYPE_STRING: astr_push_cstr(astr, "String"); break;
+
+    case TYPE_OPTION: {
+        astr_push_byte(astr, '?');
+        log_type(sem, astr, cast(TypeOption*, type)->underlying);
+    } break;
 
     case TYPE_FFI: {
         String name = cast(TypeFfi*, type)->name;
@@ -707,6 +729,47 @@ static Result error_match (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
     return RESULT_ERROR;
 }
 
+static Void implicit_cast (Sem *sem, Ast **pn, Type *to_type) {
+    Ast *n = *pn;
+
+    Ast *c = ast_alloc(sem->mem, AST_CAST, 0);
+    c->pos = n->pos;
+    c->flags |= (n->flags & AST_MUST_EVAL);
+    cast(AstCast*, c)->expr = n;
+
+    add_to_check_list(sem, c, get_scope(n));
+    set_type(c, to_type);
+
+    *pn = c;
+    sem->match.applied_cast = true;
+}
+
+static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(t1 != t2);
+
+    Ast *n2 = *pn2;
+
+    reach(r);
+    #define RETURN(R, ...) {\
+        def1(r, R);\
+        reached(r);\
+        __VA_OPT__(if (false)) if (r == RESULT_OK) implicit_cast(sem, pn2, t1);\
+        return r;\
+    }
+
+    switch (t1->tag) {
+    case TYPE_OPTION: {
+        Type *underlying = cast(TypeOption*, t1)->underlying;
+        RETURN(match_tt(sem, underlying, t2));
+    }
+
+    default: RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
+    }
+
+    #undef RETURN
+}
+
 static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
     assert_dbg(sem->match.ongoing);
     assert_dbg(t1 != t2);
@@ -714,9 +777,15 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
     if (t1->tag != t2->tag) return ERROR_MATCH();
 
     switch (t1->tag) {
+    case TYPE_OPTION: {
+        Type *u1 = cast(TypeOption*, t1)->underlying;
+        Type *u2 = cast(TypeOption*, t2)->underlying;
+        return match_tt(sem, u1, u2);
+    }
+
     case TYPE_FN: {
-        TypeFn *ty1   = cast(TypeFn*, t1);
-        TypeFn *ty2   = cast(TypeFn*, t2);
+        Auto ty1      = cast(TypeFn*, t1);
+        Auto ty2      = cast(TypeFn*, t2);
         ArrayAst *in1 = &ty1->node->inputs;
         ArrayAst *in2 = &ty2->node->inputs;
         Ast *out1     = ty1->node->output;
@@ -726,6 +795,20 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
         if (in1->count != in2->count) return ERROR_MATCH();
         array_iter (x, in1) try(match_nn(sem, x, array_get(in2, ARRAY_IDX)), return R);
         if (out1) try(match_nn(sem, out1, out2), return R);
+
+        return RESULT_OK;
+    }
+
+    case TYPE_TUPLE: {
+        Auto ty1 = cast(TypeTuple*, t1);
+        Auto ty2 = cast(TypeTuple*, t2);
+
+        if (ty1->node->members.count != ty2->node->members.count) return ERROR_MATCH();
+
+        array_iter (m1, &ty1->node->members) {
+            Ast *m2 = array_get(&ty2->node->members, ARRAY_IDX);
+            try(match_nn(sem, m1, m2), return R);
+        }
 
         return RESULT_OK;
     }
@@ -740,32 +823,54 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
     }
 }
 
-static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2) {
+// This function can cause one of the nodes to be implicitly casted,
+// which is done by writing through the double pointer.
+//
+// For the sake of simplifying the calling code, this function will
+// return RESULT_DEFER if it performs an implicit cast. That way
+// the caller doesn't have to worry about having stored the wrong
+// pointer in a local variable.
+static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype subtype) {
+    Ast *n1 = *pn1;
+    Ast *n2 = *pn2;
+
     if (!t1 || !t2) return RESULT_DEFER;
     if (t1 == t2)   return RESULT_OK;
     if (t1->tag == TYPE_TOP || t2->tag == TYPE_TOP) return RESULT_OK;
+    if ((t1->flags & TYPE_IS_DISTINCT) && !(n2->flags & AST_IS_LITERAL)) return ERROR_MATCH();
+    if ((t2->flags & TYPE_IS_DISTINCT) && !(n1->flags & AST_IS_LITERAL)) return ERROR_MATCH();
 
-    Ast *n1 = *pn1;
-    Ast *n2 = *pn2;
+    //
+    // From this point on we have to recursively match structural types.
+    //
 
     if (! sem->match.ongoing) sem->match.top_pair = (MatchPair){n1,n2,t1,t2};
     sem->match.ongoing++;
 
     Result r = RESULT_DEFER;
-    reach(r);
-    #define RETURN(R) { r = R; goto done; }
 
-    if ((t1->flags & TYPE_IS_DISTINCT) && !(n2->flags & AST_IS_LITERAL)) RETURN(ERROR_MATCH());
-    if ((t2->flags & TYPE_IS_DISTINCT) && !(n1->flags & AST_IS_LITERAL)) RETURN(ERROR_MATCH());
-
-    RETURN(match_structural(sem, n1, n2, t1, t2));
-
-    done: {
-        reached(r);
-        #undef RETURN
-        sem->match.ongoing--;
-        return r;
+    switch (subtype) {
+    case SUBTYPE_TWO_WAY:
+        r = match_structural(sem, n1, n2, t1, t2);
+        break;
+    case SUBTYPE_ONE_WAY:
+        r = match_substructural(sem, n1, pn2, t1, t2);
+        break;
+    case SUBTYPE_ANY_WAY:
+        sem->match.without_error_reporting++;
+        r = match_substructural(sem, n1, pn2, t1, t2);
+        sem->match.without_error_reporting--;
+        if (r == RESULT_ERROR) r = match_substructural(sem, n2, pn1, t2, t1);
+        break;
     }
+
+    if (sem->match.applied_cast) {
+        sem->match.applied_cast = 0;
+        r = RESULT_DEFER;
+    }
+
+    sem->match.ongoing--;
+    return r;
 }
 
 // The following wrappers around match() use the nomenclature:
@@ -775,12 +880,13 @@ static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2) {
 //     n (node):       Use argument type whether it's a value or type expression.
 //     t (type):       Argument is a Type and a dummy node is used to call match().
 //
-static Result match_vv (Sem *sem, Ast **v1, Ast **v2) { return match(sem, v1, v2, try_get_type_v(*v1), try_get_type_v(*v2)); }
-static Result match_nn (Sem *sem, Ast *n1, Ast *n2)   { return match(sem, &n1, &n2, try_get_type(n1), try_get_type(n2)); }
-static Result match_nv (Sem *sem, Ast *n, Ast **v)    { return match(sem, &n, v, try_get_type(n), try_get_type_v(*v)); }
-static Result match_nc (Sem *sem, Ast *n, Ast *c)     { return match(sem, &n, &c, try_get_type(n), try_get_type_t(c)); }
-static Result match_tt (Sem *sem, Type *t1, Type *t2) { return match(sem, &sem->match.dummy1, &sem->match.dummy2, t1, t2); }
-static Result match_tv (Sem *sem, Type *t, Ast **v)   { return match(sem, &sem->match.dummy1, v, t, try_get_type_v(*v)); }
+// These functions also make specific choices for the subtype relation.
+static Result match_vv (Sem *sem, Ast **v1, Ast **v2) { return match(sem, v1, v2, try_get_type_v(*v1), try_get_type_v(*v2), SUBTYPE_ANY_WAY); }
+static Result match_nn (Sem *sem, Ast *n1, Ast *n2)   { return match(sem, &n1, &n2, try_get_type(n1), try_get_type(n2), SUBTYPE_TWO_WAY); }
+static Result match_nv (Sem *sem, Ast *n, Ast **v)    { return match(sem, &n, v, try_get_type(n), try_get_type_v(*v), SUBTYPE_ONE_WAY); }
+static Result match_nc (Sem *sem, Ast *n, Ast *c)     { return match(sem, &n, &c, try_get_type(n), try_get_type_t(c), SUBTYPE_TWO_WAY); }
+static Result match_tt (Sem *sem, Type *t1, Type *t2) { return match(sem, &sem->match.dummy1, &sem->match.dummy2, t1, t2, SUBTYPE_TWO_WAY); }
+static Result match_tv (Sem *sem, Type *t, Ast **v)   { return match(sem, &sem->match.dummy1, v, t, try_get_type_v(*v), SUBTYPE_ONE_WAY); }
 
 static Void check_for_invalid_cycle_ (Sem *sem, AstTag tag, Ast *node, ArrayAst *path) {
     if (! (node->flags & AST_ADDED_TO_CHECK_LIST)) return;
@@ -896,6 +1002,13 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_BOOL_LITERAL:   set_type(node, sem->core_types.type_Bool); return RESULT_OK;
     case AST_FLOAT_LITERAL:  set_type(node, sem->core_types.type_Float); return RESULT_OK;
     case AST_STRING_LITERAL: set_type(node, sem->core_types.type_String); return RESULT_OK;
+
+    case AST_CAST: {
+        // As of now we only have implicit casts so there is 
+        // not much to check here.
+        assert_dbg(get_type(node));
+        return RESULT_OK;
+    }
 
     case AST_CALL: {
         Auto n = cast(AstCall*, node);
@@ -1060,7 +1173,6 @@ static Result check_node (Sem *sem, Ast *node) {
 
             Ast *m = array_get(&tup->members, idx);
             set_type(node, get_type(m));
-            return RESULT_OK;
         } else {
             return error_nt(sem, n->lhs, tl, "expected array or tuple type.");
         }
@@ -1114,6 +1226,16 @@ static Result check_node (Sem *sem, Ast *node) {
             return RESULT_DEFER;
         }
 
+        return RESULT_OK;
+    }
+
+    case AST_OPTION_TYPE: {
+        Auto n = cast(AstBaseUnary*, node);
+        Type *t = try_get_type_t(n->op);
+
+        if ((t->flags & TYPE_IS_SPECIAL) || (t->tag == TYPE_OPTION)) return error_nt(sem, node, t, "which is an invalid operand to option type.");
+
+        set_type(node, alloc_type_option(sem, t));
         return RESULT_OK;
     }
 
