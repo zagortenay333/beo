@@ -761,7 +761,12 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
     switch (t1->tag) {
     case TYPE_OPTION: {
         Type *underlying = cast(TypeOption*, t1)->underlying;
-        RETURN(match_tt(sem, underlying, t2));
+
+        if (t2->tag == TYPE_OPTION) {
+            RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
+        } else {
+            RETURN(match_tt(sem, underlying, t2));
+        }
     }
 
     default: RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
