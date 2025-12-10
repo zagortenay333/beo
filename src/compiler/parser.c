@@ -269,9 +269,17 @@ static Ast *parse_array_literal_or_index (Parser *par, Ast *lhs) {
     }
 }
 
-static Ast *parse_parens (Parser *par) {
+static Ast *parse_tuple_or_parens (Parser *par) {
     SrcPos p1 = lex_eat_this(lex, '(')->pos;
     Ast *node = parse_expression(par, 0);
+
+    if (lex_try_eat(lex, ',')) {
+        Auto n = make_node(par, AstTuple);
+        array_push(&n->members, node);
+        try_parse_expression_list(par, &n->members);
+        node = cast(Ast*, n);
+    }
+
     SrcPos p2 = lex_eat_this(lex, ')')->pos;
 
     node->pos = (SrcPos){
@@ -443,7 +451,7 @@ static Ast *parse_expression_with_lhs (Parser *par, Ast *lhs) {
 static Ast *parse_expression_without_lhs (Parser *par) {
     switch (lex_peek(lex)->tag) {
     case '-':                  return parse_negate(par);
-    case '(':                  return parse_parens(par);
+    case '(':                  return parse_tuple_or_parens(par);
     case '[':                  return parse_array_literal_or_type(par);
     case '!':                  return parse_prefix_op(par, AST_NOT);
     case '.':                  return parse_builtin_call(par);

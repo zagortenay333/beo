@@ -19,6 +19,7 @@ istruct (Sem);
     X(TYPE_RECORD, TypeRecord, 0)\
     X(TYPE_STRING, TypeString, 0)\
     X(TYPE_TOP, TypeTop, TYPE_IS_SPECIAL)\
+    X(TYPE_TUPLE, TypeTuple, 0)\
     X(TYPE_VOID, TypeVoid, TYPE_IS_SPECIAL)
 
 fenum (TypeFlags, U16) {
@@ -46,6 +47,7 @@ istruct (TypeInt)     { Type type; };
 istruct (TypeRecord)  { Type type; AstRecord *node; };
 istruct (TypeString)  { Type type; };
 istruct (TypeTop)     { Type type; };
+istruct (TypeTuple)   { Type type; AstTuple *node; };
 istruct (TypeVoid)    { Type type; };
 
 array_typedef(Type*, Type);

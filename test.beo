@@ -1,16 +1,8 @@
-fn foo (x: Int) -> []Int {
-    .print("asdf");
-    return [1, x];
-}
-
-fn bar -> (Fn (Int) -> []Int) {
-    return foo;
-}
-
-var x = bar();
-
 fn main {
+    var x = (1, "asdf");
     .print(x);
+    .print(x[0]);
+    .print(x[1]);
 }
 
 /*

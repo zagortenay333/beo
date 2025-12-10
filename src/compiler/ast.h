@@ -63,6 +63,7 @@ istruct (Interns);
     X(AST_RETURN, AstReturn, 0, 0)\
     X(AST_STRING_LITERAL, AstStringLiteral, 0, AST_IS_LITERAL)\
     X(AST_SUB, AstSub, AST_BASE_BINARY, 0)\
+    X(AST_TUPLE, AstTuple, 0, 0)\
     X(AST_VAR_DEF, AstVarDef, 0, AST_IS_LVALUE)\
     X(AST_WHILE, AstWhile, 0, AST_CREATES_SCOPE)
 
@@ -186,6 +187,7 @@ istruct (AstRecordLiteral)  { Ast base; Ast *lhs; ArrayAstRecordLitInit inits; }
 istruct (AstReturn)         { Ast base; Ast *result, *sem_edge; };
 istruct (AstStringLiteral)  { Ast base; IString *str; };
 istruct (AstSub)            { AstBaseBinary base; };
+istruct (AstTuple)          { Ast base; ArrayAst members; };
 istruct (AstVarDef)         { Ast base; IString *name; Ast *constraint, *init; };
 istruct (AstWhile)          { Ast base; Ast *cond; ArrayAst statements; };
 
@@ -282,6 +284,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_RECORD_LITERAL:   FM(F, AstRecordLiteral, lhs); AM(A, I, AstRecordLiteral, inits); break;\
     case AST_RECORD_LIT_INIT:  FM(F, AstRecordLitInit, val); break;\
     case AST_RETURN:           FM(F, AstReturn, result); break;\
+    case AST_TUPLE:            AM(A, I, AstTuple, members); break;\
     case AST_VAR_DEF:          FM(F, AstVarDef, constraint); FM(F, AstVarDef, init); break;\
     case AST_WHILE:            FM(F, AstWhile, cond); AM(A, I, AstWhile, statements); break;\
     default: break;\

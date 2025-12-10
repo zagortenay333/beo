@@ -251,11 +251,35 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         }
     } break;
 
+    case AST_TUPLE: {
+        Auto n = cast(AstTuple*, expr);
+
+        assert_dbg(! (expr->flags & AST_IS_TYPE));
+
+        array_push_n(&em->vm->instructions, VM_OP_ARRAY_NEW, result_reg);
+
+        array_iter (m, &n->members) {
+            VmRegOp init_reg = emit_expression(em, m, -1);
+            array_push_n(&em->vm->instructions, VM_OP_ARRAY_PUSH, result_reg, init_reg);
+            reg_pop(em);
+        }
+    } break;
+
     case AST_INDEX: {
         Auto n = cast(AstIndex*, expr);
+        Sem *sem = em->vm->sem->sem;
         VmRegOp arr_reg = emit_expression(em, n->lhs, -1);
-        VmRegOp idx_reg = emit_expression(em, n->idx, -1);
-        array_push_n(&em->vm->instructions, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
+
+        if (sem_get_type(sem, n->lhs)->tag == TYPE_ARRAY) {
+            VmRegOp idx_reg = emit_expression(em, n->idx, -1);
+            array_push_n(&em->vm->instructions, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
+        } else {
+            assert_dbg(sem_get_type(sem, n->lhs)->tag == TYPE_TUPLE);
+            VmRegOp idx_reg = reg_push(em);
+            emit_const(em, idx_reg, sem_get_const_val(sem, n->idx));
+            array_push_n(&em->vm->instructions, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
+        }
+
         reg_pop(em);
         reg_pop(em);
     } break;
@@ -1251,9 +1275,10 @@ VmReg vm_reg_not (VmReg r) {
 //
 // IMPORTANT: This function will do a shallow copy of arrays
 // and records! To deal with this the semantic analyser must
-// check that the expression to eval has either a primitive
-// type or array/record of primitive types. See the function
-// can_eval() in the sem.c module.
+// check that the expressions that eval at compile-time must
+// have either a primitive type, string type, or array/record
+// of primitive types. See the function can_eval() in the
+// sem.c module.
 VmReg vm_transfer_result (Vm *to, Vm *from) {
     // @todo Right now we assume that the very first register
     // in the vm->registers array is the one with the return
@@ -1274,7 +1299,7 @@ VmReg vm_transfer_result (Vm *to, Vm *from) {
 
     case VM_REG_FN: {
         // @todo We should add support for transfering functions
-        // as well, but it's somwhat annoying to do...
+        // as well, but it's somewhat annoying to do...
         reg.tag = VM_REG_NIL;
         return reg;
     }

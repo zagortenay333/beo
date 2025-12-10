@@ -193,6 +193,7 @@ static Result can_eval (Sem *sem, Ast *node) {
         case TYPE_FLOAT: break;
         case TYPE_INT: break;
         case TYPE_STRING: break;
+        case TYPE_VOID: break;
 
         case TYPE_FN: {
             result = RESULT_ERROR;
@@ -201,6 +202,16 @@ static Result can_eval (Sem *sem, Ast *node) {
         case TYPE_ARRAY: {
             Type *elem = cast(TypeArray*, t)->element;
             if (! (elem->flags & TYPE_IS_PRIMITIVE)) result = RESULT_ERROR;
+        } break;
+
+        case TYPE_TUPLE: {
+            AstTuple *tup = cast(TypeTuple*, t)->node;
+            array_iter (m, &tup->members) {
+                if (! (get_type(m)->flags & TYPE_IS_PRIMITIVE)) {
+                    result = RESULT_ERROR;
+                    break;
+                }
+            }
         } break;
 
         case TYPE_RECORD: {
@@ -215,7 +226,6 @@ static Result can_eval (Sem *sem, Ast *node) {
 
         case TYPE_FFI:
         case TYPE_TOP:
-        case TYPE_VOID:
             result = RESULT_ERROR;
             break;
         }
@@ -391,6 +401,12 @@ static Type *alloc_type_record (Sem *sem, AstRecord *n) {
     return cast(Type*, t);
 }
 
+static Type *alloc_type_tuple (Sem *sem, AstTuple *n) {
+    Auto t = cast(TypeTuple*, alloc_type(sem, TYPE_TUPLE));
+    t->node = n;
+    return cast(Type*, t);
+}
+
 static Type *alloc_type_array (Sem *sem, Ast *node, Type *element) {
     Auto t = cast(TypeArray*, alloc_type(sem, TYPE_ARRAY));
     t->node = node;
@@ -516,13 +532,23 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
         astr_push_fmt(astr, "ffi<%.*s>", STR(name));
     } break;
 
+    case TYPE_TUPLE: {
+        Auto t = cast(TypeTuple*, type);
+        astr_push_cstr(astr, "(");
+        array_iter (m, &t->node->members) {
+            log_type(sem, astr, get_type(m));
+            if (! ARRAY_ITER_DONE) astr_push_cstr(astr, ", ");
+        }
+        astr_push_cstr(astr, ")");
+    } break;
+
     case TYPE_RECORD: {
         IString *name = cast(TypeRecord*, type)->node->name;
         astr_push_fmt(astr, "%.*s", STR(*name));
     } break;
 
     case TYPE_ARRAY: {
-        TypeArray *t = cast(TypeArray*, type);
+        Auto t = cast(TypeArray*, type);
         astr_push_cstr(astr, "[]");
         log_type(sem, astr, t->element);
     } break;
@@ -888,6 +914,20 @@ static Result check_node (Sem *sem, Ast *node) {
         }
     }
 
+    case AST_TUPLE: {
+        Auto n = cast(AstTuple*, node);
+        Ast *f = array_get(&n->members, 0);
+
+        try_get_type(f);
+        if (f->flags & AST_IS_TYPE) array_iter_from (f, &n->members, 1) try_get_type_t(f);
+        else                        array_iter_from (f, &n->members, 1) try_get_type_v(f);
+
+        node->flags |= (f->flags & AST_IS_TYPE) ? AST_IS_TYPE : AST_IS_LITERAL;
+        set_type(node, alloc_type_tuple(sem, n));
+
+        return RESULT_OK;
+    }
+
     case AST_RECORD: {
         Auto n = cast(AstRecord*, node);
         set_type(node, alloc_type_record(sem, n));
@@ -998,10 +1038,33 @@ static Result check_node (Sem *sem, Ast *node) {
     }
 
     case AST_INDEX: {
-        Auto n = cast(AstIndex*, node);
-        Type *t = try_get_type(n->lhs);
-        if (t->tag != TYPE_ARRAY) return error_nt(sem, n->lhs, t, "expected array type.");
-        set_type(node, cast(TypeArray*, t)->element);
+        Auto n   = cast(AstIndex*, node);
+        Type *tl = try_get_type(n->lhs);
+        Type *ti = try_get_type_v(n->idx);
+
+        if (ti->tag != TYPE_INT) return error_nt(sem, n->idx, ti, "expected Int type.");
+
+        if (tl->tag == TYPE_ARRAY) {
+            set_type(node, cast(TypeArray*, tl)->element);
+        } else if (tl->tag == TYPE_TUPLE) {
+            if (! (n->idx->flags & AST_MUST_EVAL)) {
+                n->idx->flags |= AST_MUST_EVAL;
+                array_push(&sem->eval_list, n->idx);
+            }
+
+            if (! (n->idx->flags & AST_EVALED)) return RESULT_DEFER;
+
+            I64 idx = sem_get_const_val(sem, n->idx).i64;
+            AstTuple *tup = cast(TypeTuple*, tl)->node;
+            if (idx < 0 || cast(U64, idx) >= tup->members.count) return error_n(sem, n->idx, "Out of bounds tuple access: (idx=%li count=%li)", idx, tup->members.count);
+
+            Ast *m = array_get(&tup->members, idx);
+            set_type(node, get_type(m));
+            return RESULT_OK;
+        } else {
+            return error_nt(sem, n->lhs, tl, "expected array or tuple type.");
+        }
+
         node->flags |= AST_IS_LVALUE;
         return RESULT_OK;
     }
