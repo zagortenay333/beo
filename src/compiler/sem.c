@@ -764,6 +764,8 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
 
         if (t2->tag == TYPE_OPTION) {
             RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
+        } else if (n2->tag == AST_NIL) {
+            RETURN(RESULT_OK);
         } else {
             RETURN(match_tt(sem, underlying, t2));
         }
@@ -998,6 +1000,7 @@ static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *cal
 static Result check_node (Sem *sem, Ast *node) {
     switch (node->tag) {
     case AST_DUMMY:          return RESULT_OK;
+    case AST_NIL:            return RESULT_OK;
     case AST_BLOCK:          return RESULT_OK;
     case AST_FILE:           return RESULT_OK;
     case AST_BUILTIN_PRINT:  return RESULT_OK;
@@ -1008,8 +1011,24 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_FLOAT_LITERAL:  set_type(node, sem->core_types.type_Float); return RESULT_OK;
     case AST_STRING_LITERAL: set_type(node, sem->core_types.type_String); return RESULT_OK;
 
+    case AST_BUILTIN_VAL: {
+        Auto n = cast(AstBaseUnary*, node);
+        Type *t = try_get_type_v(n->op);
+        if (t->tag != TYPE_OPTION) return error_nt(sem, node, t, "expected an Option type.");
+        set_type(node, cast(TypeOption*, t)->underlying);
+        return RESULT_OK;
+    } 
+
+    case AST_BUILTIN_IS_NIL: {
+        Auto n = cast(AstBaseUnary*, node);
+        Type *t = try_get_type_v(n->op);
+        if (t->tag != TYPE_OPTION) return error_nt(sem, node, t, "expected an Option type.");
+        set_type(node, sem->core_types.type_Bool);
+        return RESULT_OK;
+    }
+
     case AST_CAST: {
-        // As of now we only have implicit casts so there is 
+        // As of now we only have implicit casts so there is
         // not much to check here.
         assert_dbg(get_type(node));
         return RESULT_OK;

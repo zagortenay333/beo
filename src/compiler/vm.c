@@ -201,6 +201,15 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     case AST_NEGATE: emit_unary_op(em, expr, VM_OP_NEGATE, result_reg); break;
     case AST_NOT:    emit_unary_op(em, expr, VM_OP_NOT, result_reg); break;
 
+    case AST_CAST: {
+        Auto n = cast(AstCast*, expr);
+        emit_expression(em, n->expr, result_reg);
+    } break;
+
+    case AST_NIL: { 
+        emit_const(em, result_reg, (VmReg){ .tag = VM_REG_NIL });
+    } break;
+
     case AST_BOOL_LITERAL: {
         Bool val = cast(AstBoolLiteral*, expr)->val;
         emit_const(em, result_reg, (VmReg){ .tag = VM_REG_BOOL, .boolean = val });
@@ -355,6 +364,17 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         Auto n = cast(AstBaseUnary*, expr);
         VmRegOp result_reg = emit_expression(em, n->op, -1);
         array_push_n(&em->vm->instructions, VM_OP_PRINT, result_reg);
+    } break;
+
+    case AST_BUILTIN_VAL: {
+        Auto n = cast(AstBaseUnary*, expr);
+        emit_expression(em, n->op, result_reg);
+    } break;
+
+    case AST_BUILTIN_IS_NIL: {
+        Auto n = cast(AstBaseUnary*, expr);
+        emit_expression(em, n->op, result_reg);
+        array_push_n(&em->vm->instructions, VM_OP_IS_NIL, result_reg, result_reg);
     } break;
 
     case AST_LOGICAL_AND:
@@ -644,6 +664,7 @@ Void vm_print (Vm *vm) {
             case VM_OP_JUMP_IF_FALSE: printf("jump_if_false %u r%u\n", read_u32(&cur[1]), cur[5]); cur += 6;  break;
             case VM_OP_JUMP_IF_TRUE:  printf("jump_if_true %u r%u\n", read_u32(&cur[1]), cur[5]); cur += 6; break;
             case VM_OP_PRINT:         printf("print r%u\n", cur[1]); cur += 2; break;
+            case VM_OP_IS_NIL:        printf("r%u = is_nil r%u\n", cur[2], cur[1]); cur += 3; break;
             case VM_OP_RETURN:        printf("return\n"); cur++; break;
             case VM_OP_MOVE:          printf("r%u = r%u\n", cur[1], cur[2]); cur += 3; break;
             case VM_OP_ARRAY_NEW:     printf("r%u = array_new\n", cur[1]); cur += 2; break;
@@ -1050,6 +1071,14 @@ static Void run_loop (Vm *vm) {
             cr->pc += 2;
             VmReg *reg = get_reg(vm, cr, pc[1]);
             print_reg(vm, reg, true, true);
+        } break;
+
+        case VM_OP_IS_NIL: {
+            cr->pc += 3;
+            VmReg *to   = get_reg(vm, cr, pc[1]);
+            VmReg *from = get_reg(vm, cr, pc[2]);
+            to->boolean = (from->tag == VM_REG_NIL);
+            to->tag     = VM_REG_BOOL;
         } break;
 
         case VM_OP_CALL: {

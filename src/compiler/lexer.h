@@ -22,6 +22,7 @@ istruct (Interns);
     X(false, FALSE)\
     X(fn, FN)\
     X(if, IF)\
+    X(nil, NIL)\
     X(record, RECORD)\
     X(return, RETURN)\
     X(true, TRUE)\
@@ -89,7 +90,9 @@ istruct (Interns);
 // These are builtin functions that can be invoked via
 // the prefix dot operator like .sizeof().
 #define EACH_BUILTIN(X)\
-    X(print)
+    X(is_nil)\
+    X(print)\
+    X(val)
 
 fenum (TokenTag, U64) {
     #define X(VAL, TAG, ...) TAG = VAL,

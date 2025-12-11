@@ -27,6 +27,7 @@ istruct (VmObj);
     X(VM_OP_GLOBAL_SET)\
     X(VM_OP_GREATER)\
     X(VM_OP_GREATER_EQUAL)\
+    X(VM_OP_IS_NIL)\
     X(VM_OP_JUMP)\
     X(VM_OP_JUMP_IF_FALSE)\
     X(VM_OP_JUMP_IF_TRUE)\

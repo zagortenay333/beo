@@ -32,6 +32,8 @@ istruct (Interns);
     X(AST_BOOL_LITERAL, AstBoolLiteral, 0, AST_IS_LITERAL)\
     X(AST_BREAK, AstBreak, 0, 0)\
     X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
+    X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
+    X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
     X(AST_CAST, AstCast, 0, 0)\
     X(AST_CONTINUE, AstContinue, 0, 0)\
@@ -56,6 +58,7 @@ istruct (Interns);
     X(AST_MOD, AstMod, AST_BASE_BINARY, 0)\
     X(AST_MUL, AstMul, AST_BASE_BINARY, 0)\
     X(AST_NEGATE, AstNegate, AST_BASE_UNARY, 0)\
+    X(AST_NIL, AstNil, 0, AST_IS_LITERAL)\
     X(AST_NOT, AstNot, AST_BASE_UNARY, 0)\
     X(AST_NOT_EQUAL, AstNotEqual, AST_BASE_BINARY, 0)\
     X(AST_OPTION_TYPE, AstOptionType, AST_BASE_UNARY, AST_IS_TYPE)\
@@ -157,6 +160,8 @@ istruct (AstBlock)          { Ast base; ArrayAst statements; };
 istruct (AstBoolLiteral)    { Ast base; Bool val; };
 istruct (AstBreak)          { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstBuiltinPrint)   { AstBaseUnary base; };
+istruct (AstBuiltinIsNil)   { AstBaseUnary base; };
+istruct (AstBuiltinVal)     { AstBaseUnary base; };
 istruct (AstCall)           { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
 istruct (AstCast)           { Ast base; Ast *to, *expr; };
 istruct (AstContinue)       { Ast base; IString *label; Ast *sem_edge; };
@@ -181,6 +186,7 @@ istruct (AstLogicalOr)      { AstBaseBinary base; };
 istruct (AstMod)            { AstBaseBinary base; };
 istruct (AstMul)            { AstBaseBinary base; };
 istruct (AstNegate)         { AstBaseUnary base; };
+istruct (AstNil)            { Ast base; };
 istruct (AstNot)            { AstBaseUnary base; };
 istruct (AstNotEqual)       { AstBaseBinary base; };
 istruct (AstOptionType)     { AstBaseUnary base; };

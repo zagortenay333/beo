@@ -416,10 +416,32 @@ static Ast *parse_builtin_print (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_builtin_is_nil (Parser *par) {
+    Auto node = make_node(par, AstBuiltinIsNil);
+    lex_eat_this(lex, '.');
+    lex_eat_this(lex, TOKEN_IDENT);
+    lex_eat_this(lex, '(');
+    cast(AstBaseUnary*, node)->op = parse_expression(par, 0);
+    lex_eat_this(lex, ')');
+    return complete_node(par, node);
+}
+
+static Ast *parse_builtin_val (Parser *par) {
+    Auto node = make_node(par, AstBuiltinVal);
+    lex_eat_this(lex, '.');
+    lex_eat_this(lex, TOKEN_IDENT);
+    lex_eat_this(lex, '(');
+    cast(AstBaseUnary*, node)->op = parse_expression(par, 0);
+    lex_eat_this(lex, ')');
+    return complete_node(par, node);
+}
+
 static Ast *parse_builtin_call (Parser *par) {
     Token *token = lex_peek_nth(lex, 2);
     if (token->tag != TOKEN_IDENT) par_error_pos(par, token->pos, "Expected identifier.");
     if (token->str == par->interns->builtin_print) return parse_builtin_print(par);
+    if (token->str == par->interns->builtin_is_nil) return parse_builtin_is_nil(par);
+    if (token->str == par->interns->builtin_val) return parse_builtin_val(par);
     par_error(par, "Unknown builtin.");
 }
 
@@ -427,6 +449,12 @@ static Ast *parse_option_type (Parser *par) {
     Auto node = make_node(par, AstOptionType);
     lex_eat_this(lex, '?');
     cast(AstBaseUnary*, node)->op = parse_expression(par, prefix('?'));
+    return complete_node(par, node);
+}
+
+static Ast *parse_nil (Parser *par) {
+    Auto node = make_node(par, AstNil);
+    lex_eat_this(lex, TOKEN_NIL);
     return complete_node(par, node);
 }
 
@@ -461,6 +489,7 @@ static Ast *parse_expression_without_lhs (Parser *par) {
     case '[':                  return parse_array_literal_or_type(par);
     case '!':                  return parse_prefix_op(par, AST_NOT);
     case '.':                  return parse_builtin_call(par);
+    case TOKEN_NIL:            return parse_nil(par);
     case TOKEN_F64_LITERAL:    return parse_float_literal(par);
     case TOKEN_FALSE:          return parse_bool_literal(par, TOKEN_FALSE);
     case TOKEN_FN:             return parse_fn(par);
