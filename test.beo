@@ -1,6 +1,4 @@
 fn main {
-    var x: ?Int = 4;
-    if !.is_nil(x) do .print(.val(x) + 1);
 }
 
 /*
@@ -10,8 +8,16 @@ fn main {
     test_ifs();
     test_records();
     test_tuples();
+    test_option_types();
     test_while();
     register_stress_test();
+}
+
+fn test_option_types {
+    var x: ?Int = nil;
+    var y: ?Int = 42;
+    x = y;
+    if !.is_nil(x) do .print(.val(x) + 1);
 }
 
 fn test_tuples {
