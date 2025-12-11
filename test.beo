@@ -1,11 +1,4 @@
 fn main {
-    enum Foo {
-        a, b=a, c
-    }
-
-    .print(Foo.a);
-    .print(Foo.b);
-    .print(Foo.c);
 }
 
 /*
@@ -13,11 +6,25 @@ fn main {
     test_var_defs();
     test_fn_calls();
     test_ifs();
+    test_enums();
     test_records();
     test_tuples();
     test_option_types();
     test_while();
     register_stress_test();
+}
+
+fn test_enums {
+    enum Foo {
+        a, b=a+2, c
+    }
+
+    .print(Foo.a);
+    .print(Foo.b);
+    .print(Foo.c);
+
+    var x: Foo = Foo.b;
+    .print(x);
 }
 
 fn test_option_types {
