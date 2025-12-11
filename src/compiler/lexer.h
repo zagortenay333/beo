@@ -91,7 +91,9 @@ istruct (Interns);
 // These are builtin functions that can be invoked via
 // the prefix dot operator like .sizeof().
 #define EACH_BUILTIN(X)\
+    X(inf)\
     X(is_nil)\
+    X(nan)\
     X(print)\
     X(val)
 

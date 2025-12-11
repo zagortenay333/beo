@@ -221,7 +221,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     } break;
 
     case AST_FLOAT_LITERAL: {
-        I64 val = cast(AstFloatLiteral*, expr)->val;
+        F64 val = cast(AstFloatLiteral*, expr)->val;
         emit_const(em, result_reg, (VmReg){ .tag = VM_REG_FLOAT, .f64 = val });
     } break;
 
