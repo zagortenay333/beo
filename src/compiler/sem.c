@@ -203,9 +203,10 @@ static Result can_eval (Sem *sem, Ast *node) {
         case TYPE_VOID: break;
         case TYPE_ENUM: break;
 
-        case TYPE_OPTION:
+        case TYPE_OPTION: {
             t = cast(TypeOption*, t)->underlying;
             goto again;
+        }
 
         case TYPE_FN: {
             result = RESULT_ERROR;
@@ -307,24 +308,25 @@ static VmReg ast_eval (Sem *sem, Ast *node) {
     })
 
     switch (node->tag) {
-    case AST_ADD:            return BINOP(add);
-    case AST_DIV:            return BINOP(div);
-    case AST_EQUAL:          return BINOP(equal);
-    case AST_GREATER:        return BINOP(greater);
-    case AST_GREATER_EQUAL:  return BINOP(greater_equal);
-    case AST_LESS:           return BINOP(less);
-    case AST_LESS_EQUAL:     return BINOP(less_equal);
-    case AST_MOD:            return BINOP(mod);
-    case AST_MUL:            return BINOP(mul);
-    case AST_NOT_EQUAL:      return BINOP(mod);
-    case AST_SUB:            return BINOP(mod);
-    case AST_NEGATE:         return UNOP(negate);
-    case AST_NOT:            return UNOP(not);
-    case AST_BOOL_LITERAL:   return (VmReg){ .tag=VM_REG_BOOL, .boolean=cast(AstBoolLiteral*, node)->val };
-    case AST_FLOAT_LITERAL:  return (VmReg){ .tag=VM_REG_FLOAT, .f64=cast(AstFloatLiteral*, node)->val };
-    case AST_INT_LITERAL:    return (VmReg){ .tag=VM_REG_INT, .i64=cast(AstIntLiteral*, node)->val };
-    case AST_IDENT:          return ast_eval(sem, cast(AstIdent*, node)->sem_edge);
-    case AST_VAR_DEF:        return ast_eval(sem, cast(AstVarDef*, node)->init);
+    case AST_ADD:           return BINOP(add);
+    case AST_DIV:           return BINOP(div);
+    case AST_EQUAL:         return BINOP(equal);
+    case AST_GREATER:       return BINOP(greater);
+    case AST_GREATER_EQUAL: return BINOP(greater_equal);
+    case AST_LESS:          return BINOP(less);
+    case AST_LESS_EQUAL:    return BINOP(less_equal);
+    case AST_MOD:           return BINOP(mod);
+    case AST_MUL:           return BINOP(mul);
+    case AST_NOT_EQUAL:     return BINOP(mod);
+    case AST_SUB:           return BINOP(mod);
+    case AST_NEGATE:        return UNOP(negate);
+    case AST_NOT:           return UNOP(not);
+    case AST_INT_LITERAL:   return (VmReg){ .tag=VM_REG_INT, .i64=cast(AstIntLiteral*, node)->val };
+    case AST_BOOL_LITERAL:  return (VmReg){ .tag=VM_REG_BOOL, .boolean=cast(AstBoolLiteral*, node)->val };
+    case AST_FLOAT_LITERAL: return (VmReg){ .tag=VM_REG_FLOAT, .f64=cast(AstFloatLiteral*, node)->val };
+    case AST_IDENT:         return ast_eval(sem, cast(AstIdent*, node)->sem_edge);
+    case AST_VAR_DEF:       return ast_eval(sem, cast(AstVarDef*, node)->init);
+    case AST_ENUM_FIELD:    return sem_get_const_val(sem, node);
     case AST_LOGICAL_AND: {
         Auto n = cast(AstBaseBinary*, node);
         VmReg out = TRY(ast_eval(sem, n->op1));
@@ -386,7 +388,7 @@ static Result eval (Sem *sem, Ast *node) {
         vm_destroy(vm);
     }
 
-    map_add(&sem->global_to_reg, node->id, val);
+    set_const_val(sem, node, val);
     node->flags |= AST_EVALED;
     return RESULT_OK;
 }
@@ -1066,31 +1068,27 @@ static Result check_node (Sem *sem, Ast *node) {
             set_type(node, t);
         }
 
-        { // Wait for fields with explicit inits to comptime eval:
-            U64 idx = n->scratch;
+        U64 idx = n->scratch;
+        I64 val = 0;
 
-            array_iter_from (field, &n->members, idx) {
-                assert_dbg(field->tag == AST_ENUM_FIELD);
-                Auto f = cast(AstEnumField*, field);
-                if (f->init && (f->init->flags & AST_EVALED)) {
+        array_iter_from (field, &n->members, idx) {
+            assert_dbg(field->tag == AST_ENUM_FIELD);
+            Auto f = cast(AstEnumField*, field);
+
+            if (field->flags & AST_EVALED) val = sem_get_const_val(sem, field).i64;
+
+            if (f->init) {
+                if (! (f->init->flags & AST_EVALED)) {
                     n->scratch = ARRAY_IDX;
                     return RESULT_DEFER;
                 }
+
+                val = sem_get_const_val(sem, f->init).i64;
             }
-        }
 
-        { // Assign comptime values to each field:
-            I64 val = 0;
-
-            array_iter (field, &n->members) {
-                assert_dbg(field->tag == AST_ENUM_FIELD);
-                Auto f = cast(AstEnumField*, field);
-
-                if (f->init) val = sem_get_const_val(sem, f->init).i64;
-                map_add(&sem->global_to_reg, field->id, ((VmReg){ .tag=VM_REG_INT, .i64=val }));
-                field->flags |= AST_EVALED;
-                val++;
-            }
+            set_const_val(sem, field, (VmReg){ .tag=VM_REG_INT, .i64=val });
+            field->flags |= AST_EVALED;
+            val++;
         }
 
         return RESULT_OK;
@@ -1099,8 +1097,7 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_ENUM_FIELD: {
         Auto n = cast(AstEnumField*, node);
         if (n->init) try(match_tv(sem, sem->core_types.type_Int, &n->init));
-        Type *t = try_get_type(get_scope(node)->owner);
-        set_type(node, t);
+        set_type(node, sem->core_types.type_Int);
         return RESULT_OK;
     }
 
@@ -1172,7 +1169,8 @@ static Result check_node (Sem *sem, Ast *node) {
             Auto c = cast(Ast*, cast(TypeEnum*, t)->node);
             Ast *d = scope_lookup_outside_in(sem, get_scope(c), n->rhs, node);
             if (! d) return RESULT_DEFER;
-            set_type(node, try_get_type(d));
+            Type *t = try_get_type(get_scope(d)->owner);
+            set_type(node, t);
         } else {
             if (t->tag != TYPE_RECORD) return error_n(sem, n->lhs, "Invalid lhs for dot operator.");
             try_get_type_v(n->lhs); // Assert it's a value.

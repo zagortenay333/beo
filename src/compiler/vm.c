@@ -295,11 +295,20 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
     case AST_DOT: {
         Auto n = cast(AstDot*, expr);
-        VmRegOp rec_reg = emit_expression(em, n->lhs, -1);
-        VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
-        array_push_n(&em->vm->instructions, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
-        reg_pop(em);
-        reg_pop(em);
+        Sem *sem = em->vm->sem->sem;
+        Type *t = sem_get_type(sem, n->lhs);
+
+        if (t->tag == TYPE_RECORD) {
+            VmRegOp rec_reg = emit_expression(em, n->lhs, -1);
+            VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
+            array_push_n(&em->vm->instructions, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
+            reg_pop(em);
+            reg_pop(em);
+        } else if (t->tag == TYPE_ENUM) {
+            emit_const(em, result_reg, sem_get_const_val(sem, n->sem_edge));
+        } else {
+            badpath;
+        }
     } break;
 
     case AST_CALL: {
@@ -401,6 +410,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
 static Void emit_statement (Emitter *em, Ast *stmt) {
     switch (stmt->tag) {
+    case AST_ENUM: break;
     case AST_RECORD: break;
 
     case AST_BLOCK: {
