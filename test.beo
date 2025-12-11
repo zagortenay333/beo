@@ -1,6 +1,4 @@
 fn main {
-    .print(.nan());
-    .print(.inf());
 }
 
 /*
@@ -74,6 +72,8 @@ fn test_var_defs {
     .print(a3);
     .print(a5);
     .print(a6);
+    .print(.nan());
+    .print(.inf());
 }
 
 fn test_records {
