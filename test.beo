@@ -1,4 +1,11 @@
 fn main {
+    enum Foo {
+        A, B=3, C
+    }
+
+    var x: Foo = Foo.C;
+
+    .print(x);
 }
 
 /*

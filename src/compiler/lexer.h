@@ -19,6 +19,7 @@ istruct (Interns);
     X(continue, CONTINUE)\
     X(do, DO)\
     X(else, ELSE)\
+    X(enum, ENUM)\
     X(false, FALSE)\
     X(fn, FN)\
     X(if, IF)\

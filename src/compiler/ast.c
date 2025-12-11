@@ -111,6 +111,7 @@ SrcPos ast_trimmed_pos (Interns *interns, Ast *node) {
     switch (node->tag) {
     case AST_BLOCK:          TRIM(1); break;
     case AST_FN:             TRIM(interns->FN->count); break;
+    case AST_ENUM:           TRIM(interns->ENUM->count); break;
     case AST_IF:             TRIM(interns->IF->count); break;
     case AST_RETURN:         TRIM(interns->RETURN->count); break;
     case AST_RECORD:         TRIM(interns->RECORD->count); break;

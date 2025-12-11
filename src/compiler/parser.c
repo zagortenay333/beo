@@ -147,6 +147,35 @@ static Ast *parse_record (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_enum_field (Parser *par) {
+    Auto node = make_node(par, AstEnumField);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+
+    if (lex_try_eat(lex, '=')) {
+        node->init = try_parse_expression(par, 0);
+        node->init->flags |= AST_MUST_EVAL;
+    }
+
+    return complete_node(par, node);
+}
+
+static Ast *parse_enum (Parser *par) {
+    Auto node = make_node(par, AstEnum);
+    lex_eat_this(lex, TOKEN_ENUM);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '{');
+
+    while (! lex_try_peek(lex, '}')) {
+        Ast *member = parse_enum_field(par);
+        if (! member) break;
+        array_push(&node->members, member);
+        if (! lex_try_eat(lex, ',')) break;
+    }
+
+    lex_eat_this(lex, '}');
+    return complete_node(par, node);
+}
+
 static Ast *parse_ident (Parser *par) {
     Auto node = make_node(par, AstIdent);
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
@@ -673,6 +702,7 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_CONTINUE: result = parse_continue(par); break;
     case TOKEN_FN:       result = parse_fn(par); break;
     case TOKEN_RETURN:   result = parse_return(par); break;
+    case TOKEN_ENUM:     result = parse_enum(par); break;
     case TOKEN_RECORD:   result = parse_record(par); break;
     case TOKEN_VAR:      result = parse_var_def(par, true, true); result->flags |= AST_IS_LOCAL_VAR; break;
     case TOKEN_WHILE:    result = parse_while(par); break;
@@ -701,6 +731,7 @@ static Ast *parse_statement (Parser *par) {
 static Ast *parse_top_statement (Parser *par) {
     switch (lex_peek(lex)->tag) {
     case ';':          while (lex_try_eat(lex, ';')); return parse_top_statement(par);
+    case TOKEN_ENUM:   return parse_enum(par); break;
     case TOKEN_RECORD: return parse_record(par); break;
     case TOKEN_FN:     return parse_fn(par); break;
     case TOKEN_VAR: {

@@ -31,8 +31,8 @@ istruct (Interns);
     X(AST_BLOCK, AstBlock, 0, AST_CREATES_SCOPE)\
     X(AST_BOOL_LITERAL, AstBoolLiteral, 0, AST_IS_LITERAL)\
     X(AST_BREAK, AstBreak, 0, 0)\
-    X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
+    X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
     X(AST_CAST, AstCast, 0, 0)\
@@ -40,6 +40,8 @@ istruct (Interns);
     X(AST_DIV, AstDiv, AST_BASE_BINARY, 0)\
     X(AST_DOT, AstDot, 0, 0)\
     X(AST_DUMMY, AstDummy, 0, 0)\
+    X(AST_ENUM, AstEnum, 0, AST_IS_TYPE | AST_CREATES_SCOPE)\
+    X(AST_ENUM_FIELD, AstEnumField, 0, 0)\
     X(AST_EQUAL, AstEqual, AST_BASE_BINARY, 0)\
     X(AST_FILE, AstFile, 0, AST_CREATES_SCOPE)\
     X(AST_FLOAT_LITERAL, AstFloatLiteral, 0, AST_IS_LITERAL)\
@@ -78,6 +80,8 @@ istruct (Interns);
 // to scopes before any code generators have run.
 // They must have an "IString *name" field.
 #define EACH_STATIC_NAME_GENERATOR(X)\
+    X(AST_ENUM, AstEnum)\
+    X(AST_ENUM_FIELD, AstEnumField)\
     X(AST_FN, AstFn)\
     X(AST_RECORD, AstRecord)\
     X(AST_VAR_DEF, AstVarDef)
@@ -168,6 +172,8 @@ istruct (AstContinue)       { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstDiv)            { AstBaseBinary base; };
 istruct (AstDot)            { Ast base; Ast *lhs, *sem_edge; IString *rhs; };
 istruct (AstDummy)          { Ast base; };
+istruct (AstEnum)           { Ast base; IString *name; ArrayAst members; U64 scratch; };
+istruct (AstEnumField)      { Ast base; IString *name; Ast *init; };
 istruct (AstEqual)          { AstBaseBinary base; };
 istruct (AstFile)           { Ast base; IString *path; String content; ArrayAst statements; };
 istruct (AstFloatLiteral)   { Ast base; F64 val; };
@@ -289,6 +295,8 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_FILE:             AM(A, I, AstFile, statements); break;\
     case AST_FN:               AM(A, I, AstFn, statements); break;\
     case AST_IF:               FM(F, AstIf, cond); FM(F, AstIf, then_arm); FM(F, AstIf, else_arm); break;\
+    case AST_ENUM:             AM(A, I, AstEnum, members); break;\
+    case AST_ENUM_FIELD:       FM(F, AstEnumField, init); break;\
     case AST_INDEX:            FM(F, AstIndex, lhs); FM(F, AstIndex, idx); break;\
     case AST_RECORD:           AM(A, I, AstRecord, members); break;\
     case AST_RECORD_LITERAL:   FM(F, AstRecordLiteral, lhs); AM(A, I, AstRecordLiteral, inits); break;\

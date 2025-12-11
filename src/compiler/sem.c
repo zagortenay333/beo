@@ -201,6 +201,7 @@ static Result can_eval (Sem *sem, Ast *node) {
         case TYPE_INT: break;
         case TYPE_STRING: break;
         case TYPE_VOID: break;
+        case TYPE_ENUM: break;
 
         case TYPE_OPTION:
             t = cast(TypeOption*, t)->underlying;
@@ -544,6 +545,11 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
     case TYPE_INT:    astr_push_cstr(astr, "Int"); break;
     case TYPE_STRING: astr_push_cstr(astr, "String"); break;
 
+    case TYPE_ENUM: {
+        IString *name = cast(TypeRecord*, type)->node->name;
+        astr_push_fmt(astr, "enum %.*s", STR(*name));
+    } break;
+
     case TYPE_OPTION: {
         astr_push_byte(astr, '?');
         log_type(sem, astr, cast(TypeOption*, type)->underlying);
@@ -551,7 +557,7 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
 
     case TYPE_FFI: {
         String name = cast(TypeFfi*, type)->name;
-        astr_push_fmt(astr, "ffi<%.*s>", STR(name));
+        astr_push_fmt(astr, "ffi %.*s", STR(name));
     } break;
 
     case TYPE_TUPLE: {
@@ -566,7 +572,7 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
 
     case TYPE_RECORD: {
         IString *name = cast(TypeRecord*, type)->node->name;
-        astr_push_fmt(astr, "%.*s", STR(*name));
+        astr_push_fmt(astr, "record %.*s", STR(*name));
     } break;
 
     case TYPE_ARRAY: {
@@ -1051,6 +1057,53 @@ static Result check_node (Sem *sem, Ast *node) {
         }
     }
 
+    case AST_ENUM: {
+        Auto n = cast(AstEnum*, node);
+
+        if (! get_type(node)) {
+            Type *t = alloc_type(sem, TYPE_ENUM);
+            cast(TypeEnum*, t)->node = n;
+            set_type(node, t);
+        }
+
+        { // Wait for fields with explicit inits to comptime eval:
+            U64 idx = n->scratch;
+
+            array_iter_from (field, &n->members, idx) {
+                assert_dbg(field->tag == AST_ENUM_FIELD);
+                Auto f = cast(AstEnumField*, field);
+                if (f->init && (f->init->flags & AST_EVALED)) {
+                    n->scratch = ARRAY_IDX;
+                    return RESULT_DEFER;
+                }
+            }
+        }
+
+        { // Assign comptime values to each field:
+            I64 val = 0;
+
+            array_iter (field, &n->members) {
+                assert_dbg(field->tag == AST_ENUM_FIELD);
+                Auto f = cast(AstEnumField*, field);
+
+                if (f->init) val = sem_get_const_val(sem, f->init).i64;
+                map_add(&sem->global_to_reg, field->id, ((VmReg){ .tag=VM_REG_INT, .i64=val }));
+                field->flags |= AST_EVALED;
+                val++;
+            }
+        }
+
+        return RESULT_OK;
+    }
+
+    case AST_ENUM_FIELD: {
+        Auto n = cast(AstEnumField*, node);
+        if (n->init) try(match_tv(sem, sem->core_types.type_Int, &n->init));
+        Type *t = try_get_type(get_scope(node)->owner);
+        set_type(node, t);
+        return RESULT_OK;
+    }
+
     case AST_TUPLE: {
         Auto n = cast(AstTuple*, node);
         Ast *f = array_get(&n->members, 0);
@@ -1115,7 +1168,11 @@ static Result check_node (Sem *sem, Ast *node) {
             VmReg reg; Bool found = map_get(&ffi->obj->record, *n->rhs, &reg);
             if (! found) return error_n(sem, node, "Reference to undeclared ffi function.");
             set_type(node, sem->core_types.type_CFn);
-            return RESULT_OK;
+        } else if (t->tag == TYPE_ENUM) {
+            Auto c = cast(Ast*, cast(TypeEnum*, t)->node);
+            Ast *d = scope_lookup_outside_in(sem, get_scope(c), n->rhs, node);
+            if (! d) return RESULT_DEFER;
+            set_type(node, try_get_type(d));
         } else {
             if (t->tag != TYPE_RECORD) return error_n(sem, n->lhs, "Invalid lhs for dot operator.");
             try_get_type_v(n->lhs); // Assert it's a value.
@@ -1128,8 +1185,9 @@ static Result check_node (Sem *sem, Ast *node) {
             Type *dt = try_get_type(d);
             node->flags |= AST_IS_LVALUE | (d->flags & AST_IS_TYPE);
             set_type(node, dt);
-            return RESULT_OK;
         }
+
+        return RESULT_OK;
     }
 
     case AST_ARRAY_LITERAL: {

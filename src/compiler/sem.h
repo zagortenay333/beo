@@ -12,6 +12,7 @@ istruct (Sem);
 #define EACH_TYPE(X)\
     X(TYPE_ARRAY, TypeArray, 0)\
     X(TYPE_BOOL, TypeBool, TYPE_IS_PRIMITIVE)\
+    X(TYPE_ENUM, TypeEnum, TYPE_IS_PRIMITIVE)\
     X(TYPE_FFI, TypeFfi, TYPE_IS_SPECIAL)\
     X(TYPE_FLOAT, TypeFloat, TYPE_IS_PRIMITIVE)\
     X(TYPE_FN, TypeFn, 0)\
@@ -41,6 +42,7 @@ typedef U32 TypeId;
 istruct (Type)        { TypeTag tag; TypeFlags flags; TypeId id; };
 istruct (TypeArray)   { Type type; Ast *node; Type *element; };
 istruct (TypeBool)    { Type type; };
+istruct (TypeEnum)    { Type type; AstEnum *node; };
 istruct (TypeFfi)     { Type type; String name; VmObjRecord *obj; };
 istruct (TypeFloat)   { Type type; };
 istruct (TypeFn)      { Type type; AstBaseFn *node; };
