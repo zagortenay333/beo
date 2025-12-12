@@ -390,6 +390,18 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         emit_const_string(em, *fn_name, result_reg);
     } break;
 
+    case AST_BUILTIN_FILE: {
+        Scope *file_scope = sem_scope_get_ancestor(expr->sem_scope, AST_FILE);
+        assert_dbg(file_scope->owner->tag == AST_FILE);
+        IString *file_name = cast(AstFile*, file_scope->owner)->path;
+        emit_const_string(em, *file_name, result_reg);
+    } break;
+
+    case AST_BUILTIN_LINE: {
+        VmReg val = sem_get_const_val(em->vm->sem->sem, expr);
+        emit_const(em, result_reg, val);
+    } break;
+
     case AST_BUILTIN_VAL: {
         Auto n = cast(AstBaseUnary*, expr);
         emit_expression(em, n->op, result_reg);

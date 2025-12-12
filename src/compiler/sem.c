@@ -345,6 +345,7 @@ static VmReg ast_eval (Sem *sem, Ast *node) {
     case AST_IDENT:         return ast_eval(sem, cast(AstIdent*, node)->sem_edge);
     case AST_VAR_DEF:       return ast_eval(sem, cast(AstVarDef*, node)->init);
     case AST_ENUM_FIELD:    return sem_get_const_val(sem, node);
+    case AST_BUILTIN_LINE:  return (VmReg){ .tag=VM_REG_INT, .i64=cast(I64, node->pos.first_line) };
     case AST_LOGICAL_AND: {
         Auto n = cast(AstBaseBinary*, node);
         VmReg out = TRY(ast_eval(sem, n->op1));
@@ -1105,6 +1106,16 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_BUILTIN_FN_NAME: {
         Scope *fn_scope = sem_scope_get_ancestor(get_scope(node), AST_FN);
         if (! fn_scope) return error_n(sem, node, "The builtin .fn_name() must appear inside a function.");
+        set_type(node, sem->core_types.type_String);
+        return RESULT_OK;
+    }
+
+    case AST_BUILTIN_LINE: {
+        set_type(node, sem->core_types.type_Int);
+        return RESULT_OK;
+    }
+
+    case AST_BUILTIN_FILE: {
         set_type(node, sem->core_types.type_String);
         return RESULT_OK;
     }

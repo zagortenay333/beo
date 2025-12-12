@@ -1,9 +1,15 @@
+fn main {
+    .print(.line());
+    .print(.file());
+}
+
 /*
 fn main {
     test_var_defs();
     test_fn_calls();
     test_named_call_args();
     test_default_fn_args();
+    test_some_directives();
     test_ifs();
     test_enums();
     test_records();
@@ -17,6 +23,12 @@ fn test_start (fn_name: String) {
     .print("--------------------------------------------");
     .print(fn_name);
     .print("--------------------------------------------");
+}
+
+fn test_some_directives {
+    test_start(.fn_name());
+    .print(.fn_name());
+    .print(.line());
 }
 
 fn test_default_fn_args {
