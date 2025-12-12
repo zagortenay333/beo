@@ -1127,6 +1127,11 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_DEFER: {
+        sem_set_target(sem, node, node->sem_scope->owner);
+        return RESULT_OK;
+    }
+
     case AST_CAST: {
         // As of now we only have implicit casts so there is
         // not much to check here.

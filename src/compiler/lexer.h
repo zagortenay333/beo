@@ -17,6 +17,7 @@ istruct (Interns);
     X(Fn, FN_TYPE)\
     X(break, BREAK)\
     X(continue, CONTINUE)\
+    X(defer, DEFER)\
     X(do, DO)\
     X(else, ELSE)\
     X(enum, ENUM)\

@@ -13,17 +13,24 @@ istruct (BreakPatch) {
     U32 break_patch;
 };
 
+istruct (Defer) {
+    Ast *statement;
+    Ast *scope_owner;
+};
+
 istruct (Emitter) {
     Mem *mem;
     Vm *vm;
     U16 next_reg;
     AstFn *fn;
     Map(AstId, VmRegOp) binds;
+    Array(Defer) defers;
     Array(BreakPatch) break_patches;
     Array(ContinuePatch) continue_patches;
 };
 
 static VmObjRecord *get_ffi (Vm *vm, String name);
+static Void emit_statement (Emitter *em, Ast *stmt);
 static VmRegOp emit_expression (Emitter *em, Ast *expr, I32);
 static Void print_reg (Vm *vm ,VmReg *reg, Bool runtime, Bool newline);
 
@@ -174,6 +181,30 @@ static Void emit_unary_op (Emitter *em, Ast *expr, VmOp op, VmRegOp result) {
 
 static Void emit_move (Emitter *em, VmRegOp to, VmRegOp from) {
     array_push_n(&em->vm->instructions, VM_OP_MOVE, to, from);
+}
+
+// This function is used for emitting defers right before
+// explicit terminators like return, break, continue, ...
+//
+// The defers that appear at the end of a scope are emitted
+// by the emit_sequence() function.
+static Void emit_defers (Emitter *em, Ast *outermost_scope_owner) {
+    Auto until = array_find(&em->defers, IT.scope_owner == outermost_scope_owner);
+    assert_dbg(until != ARRAY_NIL_IDX);
+
+    array_iter_back (d, &em->defers, *) {
+        if (ARRAY_IDX == until) break;
+        if (d->statement) emit_statement(em, d->statement);
+    }
+}
+
+// Use this to emit a scoped sequence of statements. It will handle defers.
+static Void emit_sequence (Emitter *em, Ast *scope_owner, ArrayAst *statements) {
+    assert_dbg(scope_owner->flags & AST_CREATES_SCOPE);
+    array_push_lit(&em->defers, .statement=0, .scope_owner=scope_owner); // Push sentinel.
+    array_iter (s, statements) emit_statement(em, s);
+    array_iter_back (d, &em->defers, *) if (d->statement && (d->scope_owner == scope_owner)) emit_statement(em, d->statement);
+    array_find_remove_all(&em->defers, IT.scope_owner == scope_owner);
 }
 
 // The @pref argument can be either a VmRegOp into which to place
@@ -447,7 +478,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
 
     case AST_BLOCK: {
         U16 r = em->next_reg;
-        array_iter (s, &cast(AstBlock*, stmt)->statements) emit_statement(em, s);
+        emit_sequence(em, stmt, &cast(AstBlock*, stmt)->statements);
         em->next_reg = r;
     } break;
 
@@ -510,6 +541,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
     case AST_RETURN: {
         Auto n = cast(AstReturn*, stmt);
         if (n->result) emit_expression(em, n->result, 0);
+        emit_defers(em, n->sem_edge);
         array_push(&em->vm->instructions, VM_OP_RETURN);
     } break;
 
@@ -551,7 +583,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         U32 patch_jump = get_bytecode_pos(em);
         array_push_n(&em->vm->instructions, 0, 0, 0, 0, cond);
 
-        array_iter (s, &n->statements) emit_statement(em, s);
+        emit_sequence(em, stmt, &n->statements);
 
         array_push_n(&em->vm->instructions, VM_OP_JUMP, ENCODE_U32(continue_block));
 
@@ -568,23 +600,41 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
 
     case AST_CONTINUE: {
         Auto n = cast(AstContinue*, stmt);
+        emit_defers(em, n->sem_edge);
         ContinuePatch *patch = array_find_ref(&em->continue_patches, IT->while_loop == n->sem_edge);
         array_push_n(&em->vm->instructions, VM_OP_JUMP, ENCODE_U32(patch->continue_block));
     } break;
 
     case AST_BREAK: {
         Auto n = cast(AstBreak*, stmt);
+        emit_defers(em, n->sem_edge);
         array_push(&em->vm->instructions, VM_OP_JUMP);
         U32 patch = get_bytecode_pos(em);
         array_push_n(&em->vm->instructions, 0, 0, 0, 0);
         array_push(&em->break_patches, ((BreakPatch){ n->sem_edge, patch }));
     } break;
 
+    case AST_DEFER: {
+        Auto n = cast(AstDefer*, stmt);
+        Auto t = n->sem_edge;
+
+        array_iter_back (d, &em->defers, *) {
+            if (d->scope_owner == t) {
+                array_insert_lit(&em->defers, ARRAY_IDX + 1, .statement=n->stmt, .scope_owner=t);
+                return;
+            }
+        }
+
+        // We know we can't get here because the emit_sequence()
+        // function will insert a sentinel value will cause the
+        // above loop to hit the if statement;
+        badpath;
+    }
+
     default: {
         emit_expression(em, stmt, -1);
         reg_pop(em);
     } break;
-
     }
 }
 
@@ -601,6 +651,7 @@ static Void emit_fn_bytecode (Vm *vm, AstFn *ast) {
     em.fn = ast;
     em.vm = vm;
     map_init(&em.binds, tm);
+    array_init(&em.defers, tm);
     array_init(&em.break_patches, tm);
     array_init(&em.continue_patches, tm);
 
@@ -608,7 +659,7 @@ static Void emit_fn_bytecode (Vm *vm, AstFn *ast) {
     reg_push(&em); // Second register contains callee fn pointer.
     array_iter (arg, &cast(AstBaseFn*, ast)->inputs) add_reg_bind(&em, arg, reg_push(&em));
 
-    array_iter (stmt, &ast->statements) emit_statement(&em, stmt);
+    emit_sequence(&em, cast(Ast*, ast), &ast->statements);
 
     // @todo If the function ends without a return (in the ast)
     // then we have to emit a return instruction in order to

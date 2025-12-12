@@ -43,6 +43,7 @@ istruct (Interns);
     X(AST_CALL_NAMED_ARG, AstCallNamedArg, 0, 0)\
     X(AST_CAST, AstCast, 0, 0)\
     X(AST_CONTINUE, AstContinue, 0, 0)\
+    X(AST_DEFER, AstDefer, 0, 0)\
     X(AST_DIV, AstDiv, AST_BASE_BINARY, 0)\
     X(AST_DOT, AstDot, 0, 0)\
     X(AST_DUMMY, AstDummy, 0, 0)\
@@ -102,6 +103,7 @@ istruct (Interns);
     X(AST_BREAK, AstBreak, "Target is always an AstWhile.")\
     X(AST_CALL, AstCall, "If it is a direct call, target is the called fn.")\
     X(AST_CONTINUE, AstContinue, "Target is always an AstWhile.")\
+    X(AST_DEFER, AstDefer, "Target is always the corresponding Scope.owner.")\
     X(AST_DOT, AstDot, "Always has a target.")\
     X(AST_IDENT, AstIdent, "Always has a target.")\
     X(AST_INDEX, AstIndex, "If indexing into a tuple, target is the tuple field.")\
@@ -181,6 +183,7 @@ istruct (AstCallDefaultArg)    { Ast base; Ast *arg; };
 istruct (AstCallNamedArg)      { Ast base; IString *name; Ast *arg; };
 istruct (AstCast)              { Ast base; Ast *to, *expr; };
 istruct (AstContinue)          { Ast base; IString *label; Ast *sem_edge; };
+istruct (AstDefer)             { Ast base; Ast *stmt, *sem_edge; };
 istruct (AstDiv)               { AstBaseBinary base; };
 istruct (AstDot)               { Ast base; Ast *lhs, *sem_edge; IString *rhs; };
 istruct (AstDummy)             { Ast base; };
@@ -305,6 +308,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_CALL_DEFAULT_ARG: FM(F, AstCallDefaultArg, arg); break;\
     case AST_CALL_NAMED_ARG:   FM(F, AstCallNamedArg, arg); break;\
     case AST_CAST:             FM(F, AstCast, to); FM(F, AstCast, expr); break;\
+    case AST_DEFER:            FM(F, AstDefer, stmt); break;\
     case AST_DOT:              FM(F, AstDot, lhs); break;\
     case AST_FILE:             AM(A, I, AstFile, statements); break;\
     case AST_FN:               AM(A, I, AstFn, statements); break;\

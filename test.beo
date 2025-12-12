@@ -8,6 +8,7 @@ fn main {
     test_named_call_args();
     test_default_fn_args();
     test_some_directives();
+    test_defer();
     test_ifs();
     test_enums();
     test_records();
@@ -21,6 +22,34 @@ fn test_start (fn_name: String) {
     .print("--------------------------------------------");
     .print(fn_name);
     .print("--------------------------------------------");
+}
+
+fn test_defer {
+    test_start(.fn_name());
+
+    {
+        defer .print("4");
+        defer .print("3");
+        {
+            defer .print("1");
+            defer .print("0");
+        }
+        .print("2");
+    }
+
+    {
+        var i = 0;
+        while i < 10 {
+            defer do if i == 5 do .print("a");
+
+            if i == 5 {
+                defer .print("b");
+                break;
+            }
+
+            i += 1;
+        }
+    }
 }
 
 fn test_some_directives {

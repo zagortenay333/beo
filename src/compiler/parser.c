@@ -730,12 +730,6 @@ static Ast *parse_assign (Parser *par, Ast *lhs, AstTag fused_op) {
     return complete_node(par, result);
 }
 
-static Ast *parse_block (Parser *par) {
-    Auto node = make_node(par, AstBlock);
-    parse_block_out(par, &node->statements);
-    return complete_node(par, node);
-}
-
 static Void parse_block_out (Parser *par, ArrayAst *out) {
     if (lex_try_eat(lex, '{')) {
         while (true) {
@@ -753,6 +747,29 @@ static Void parse_block_out (Parser *par, ArrayAst *out) {
     }
 }
 
+static Ast *parse_block (Parser *par) {
+    Auto node = make_node(par, AstBlock);
+    parse_block_out(par, &node->statements);
+    return complete_node(par, node);
+}
+
+static Ast *parse_defer (Parser *par) {
+    Auto node = make_node(par, AstDefer);
+    lex_eat_this(lex, TOKEN_DEFER);
+
+    if (lex_try_peek(lex, TOKEN_DO)) {
+        node->stmt = parse_block(par);
+    } else if (lex_try_peek(lex, '{')) {
+        node->stmt = parse_block(par);
+    } else {
+        node->stmt = try_parse_expression(par, 0);
+        if (! node->stmt) par_error(par, "Expected block or expression.");
+        lex_eat_this(lex, ';');
+    }
+
+    return complete_node(par, node);
+}
+
 static Ast *parse_statement (Parser *par) {
     Ast *result = 0;
 
@@ -760,8 +777,10 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_EOF: return 0;
     case ';':            while (lex_try_eat(lex, ';')); return parse_statement(par);
     case '{':            result = parse_block(par); break;
+    case TOKEN_DO:       result = parse_block(par); break;
     case TOKEN_BREAK:    result = parse_break(par); break;
     case TOKEN_CONTINUE: result = parse_continue(par); break;
+    case TOKEN_DEFER:    result = parse_defer(par); break;
     case TOKEN_FN:       result = parse_fn(par); break;
     case TOKEN_RETURN:   result = parse_return(par); break;
     case TOKEN_ENUM:     result = parse_enum(par); break;
