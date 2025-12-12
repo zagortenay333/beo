@@ -90,7 +90,7 @@ istruct (Interns);
     X(279,  TOKEN_FAT_ARROW, "=>")
 
 // These are builtin functions that can be invoked via
-// the prefix dot operator like .sizeof().
+// the prefix dot operator like .line().
 #define EACH_BUILTIN(X)\
     X(file)\
     X(fn_name)\
