@@ -8,7 +8,7 @@ fn main {
         .print(y);
     }
 
-    foo("asf");
+    foo(y="asf");
 }
 
 /*
@@ -31,11 +31,12 @@ fn test_default_fn_args {
         return x + 42;
     }
 
-    fn foo (x: Int = bar(42)) {
+    fn foo (x: Int = bar(42), y: String) {
         .print(x);
+        .print(y);
     }
 
-    foo();
+    foo(y="asf");
 }
 
 fn test_named_call_args {
