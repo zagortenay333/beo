@@ -35,6 +35,8 @@ istruct (Interns);
     X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
+    X(AST_CALL_DEFAULT_ARG, AstCallDefaultArg, 0, 0)\
+    X(AST_CALL_NAMED_ARG, AstCallNamedArg, 0, 0)\
     X(AST_CAST, AstCast, 0, 0)\
     X(AST_CONTINUE, AstContinue, 0, 0)\
     X(AST_DIV, AstDiv, AST_BASE_BINARY, 0)\
@@ -167,6 +169,8 @@ istruct (AstBuiltinPrint)   { AstBaseUnary base; };
 istruct (AstBuiltinIsNil)   { AstBaseUnary base; };
 istruct (AstBuiltinVal)     { AstBaseUnary base; };
 istruct (AstCall)           { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
+istruct (AstCallDefaultArg) { Ast base; Ast *arg; };
+istruct (AstCallNamedArg)   { Ast base; IString *name; Ast *arg; };
 istruct (AstCast)           { Ast base; Ast *to, *expr; };
 istruct (AstContinue)       { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstDiv)            { AstBaseBinary base; };
@@ -290,6 +294,8 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_ARRAY_TYPE:       FM(F, AstArrayType, element); break;\
     case AST_BLOCK:            AM(A, I, AstBlock, statements); break;\
     case AST_CALL:             AM(A, I, AstCall, args); FM(F, AstCall, lhs); break;\
+    case AST_CALL_DEFAULT_ARG: FM(F, AstCallDefaultArg, arg); break;\
+    case AST_CALL_NAMED_ARG:   FM(F, AstCallNamedArg, arg); break;\
     case AST_CAST:             FM(F, AstCast, to); FM(F, AstCast, expr); break;\
     case AST_DOT:              FM(F, AstDot, lhs); break;\
     case AST_FILE:             AM(A, I, AstFile, statements); break;\

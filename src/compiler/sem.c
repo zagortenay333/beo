@@ -151,6 +151,24 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     return file;
 }
 
+static IString *get_name (Ast *node) {
+    switch (node->tag) {
+    #define X(TAG, TYPE) case TAG: return cast(TYPE*, node)->name;
+        EACH_STATIC_NAME_GENERATOR(X)
+    #undef X
+
+    case AST_IDENT: return cast(AstIdent*, node)->name;
+    default: badpath;
+    }
+}
+
+static Ast *get_init (Ast *node) {
+    switch (node->tag) {
+    case AST_VAR_DEF: return cast(AstVarDef*, node)->init;
+    default:          return 0;
+    }
+}
+
 // Top call should have allow_local_var = false.
 static Result can_eval_ (Sem *sem, Ast *node, Bool allow_local_var) {
     if (! (node->flags & AST_CHECKED)) return RESULT_DEFER;
@@ -983,10 +1001,57 @@ static Result check_is_read_only (Sem *sem, Ast *n) {
     #undef RETURN
 }
 
-static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
-    if (target_args->count != call_args->count) {
-        return error_nn(sem, target, caller, "Argument count in call doesn't match target fn.");
+static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
+    if (call_args->count > target_args->count) {
+        return error_nn(sem, caller, target, "Too many call args. Got %lu, but expected %lu.", call_args->count, target_args->count);
     }
+
+    array_ensure_count(call_args, target_args->count, true);
+
+    // Reorder named arguments:
+    array_iter (arg, call_args) {
+        if (!arg || arg->tag != AST_CALL_NAMED_ARG) continue;
+
+        IString *name = cast(AstCallNamedArg*, arg)->name;
+        U64 def = array_find(target_args, get_name(IT) == name);
+
+        if (def == ARRAY_NIL_IDX) return error_nn(sem, arg, target, "Referencing unknown argument");
+        if (def == ARRAY_IDX) continue;
+
+        Ast *arg2 = array_get(call_args, def);
+        if (arg2 && (arg2->tag != AST_CALL_NAMED_ARG || name == cast(AstCallNamedArg*, arg2)->name))
+            return error_nn(sem, arg, arg2, "Duplicate call args.");
+
+        array_swap(call_args, def, ARRAY_IDX);
+        ARRAY_IDX--; // To stay on current index next iteration.
+    }
+
+    // Insert missing default arguments:
+    array_iter (arg, call_args) {
+        if (arg) {
+            if (arg->tag == AST_CALL_NAMED_ARG) array_set(call_args, ARRAY_IDX, cast(AstCallNamedArg*, arg)->arg);
+            continue;
+        }
+
+        Ast *def  = array_get(target_args, ARRAY_IDX);
+        Ast *init = get_init(def);
+
+        if (! init) return error_nn(sem, def, caller, "Argument does not have default value and is omitted from call.");
+
+        Ast *n    = ast_alloc(sem->mem, AST_CALL_DEFAULT_ARG, 0);
+        n->pos    = caller->pos;
+        n->flags |= (def->flags & AST_IS_TYPE);
+        cast(AstCallDefaultArg*, n)->arg = init;
+
+        add_to_check_list(sem, n, get_scope(caller));
+        array_set(call_args, ARRAY_IDX, n);
+    }
+
+    return RESULT_OK;
+}
+
+static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
+    try(check_call_arg_layout(sem, target, target_args, caller, call_args));
 
     array_iter (n1, target_args, *) {
         Ast **n2 = array_ref(call_args, ARRAY_IDX);
@@ -1012,6 +1077,7 @@ static Result check_node (Sem *sem, Ast *node) {
     case AST_BLOCK:          return RESULT_OK;
     case AST_FILE:           return RESULT_OK;
     case AST_BUILTIN_PRINT:  return RESULT_OK;
+    case AST_CALL_NAMED_ARG: return RESULT_OK;
     case AST_IF:             return match_tv(sem, sem->core_types.type_Bool, &cast(AstIf*, node)->cond);
     case AST_WHILE:          return match_tv(sem, sem->core_types.type_Bool, &cast(AstWhile*, node)->cond);
     case AST_INT_LITERAL:    set_type(node, sem->core_types.type_Int); return RESULT_OK;
@@ -1025,7 +1091,7 @@ static Result check_node (Sem *sem, Ast *node) {
         if (t->tag != TYPE_OPTION) return error_nt(sem, node, t, "expected an Option type.");
         set_type(node, cast(TypeOption*, t)->underlying);
         return RESULT_OK;
-    } 
+    }
 
     case AST_BUILTIN_IS_NIL: {
         Auto n = cast(AstBaseUnary*, node);
@@ -1039,6 +1105,12 @@ static Result check_node (Sem *sem, Ast *node) {
         // As of now we only have implicit casts so there is
         // not much to check here.
         assert_dbg(get_type(node));
+        return RESULT_OK;
+    }
+
+    case AST_CALL_DEFAULT_ARG: {
+        AstCallDefaultArg *n = cast(AstCallDefaultArg*, node);
+        set_type(node, try_get_type(n->arg));
         return RESULT_OK;
     }
 
@@ -1282,7 +1354,7 @@ static Result check_node (Sem *sem, Ast *node) {
 
         if ((node->flags & (AST_IS_LOCAL_VAR|AST_IS_GLOBAL_VAR)) && !(node->flags & AST_IS_FN_ARG)) {
             if (! n->init) return error_n(sem, node, "Missing initializer.");
-        } else if (n->init) {
+        } else if (n->init && !(node->flags & AST_IS_FN_ARG)) {
             return error_n(sem, node, "Initializer not supported here.");
         }
 
@@ -1302,9 +1374,8 @@ static Result check_node (Sem *sem, Ast *node) {
             if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->init, t, "expected concrete type");
         }
 
-        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) {
-            return RESULT_DEFER;
-        }
+        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) return RESULT_DEFER;
+        if ((node->flags & AST_IS_FN_ARG) && n->init && !(n->init->flags & AST_EVALED)) return RESULT_DEFER;
 
         return RESULT_OK;
     }
@@ -1593,6 +1664,7 @@ static Void set_const_val (Sem *sem, Ast *node, VmReg reg) {
 }
 
 VmReg sem_get_const_val (Sem *sem, Ast *node) {
+    assert_dbg(node->flags & AST_EVALED);
     VmReg reg = {};
     map_get(&sem->global_to_reg, node->id, &reg);
     return reg;

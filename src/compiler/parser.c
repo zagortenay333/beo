@@ -18,11 +18,11 @@ istruct (Parser) {
 #define lex (par->lexer)
 
 static Ast *parse_block (Parser *par);
-static Void parse_block_out (Parser *par, ArrayAst *);
 static Ast *parse_statement (Parser *par);
+static Void parse_block_out (Parser *par, ArrayAst *);
 static Ast *parse_expression (Parser *par, U64 left_op);
-static Ast *try_parse_expression (Parser *par, U64 left_op);
 static Ast *parse_expression_before_brace (Parser *par);
+static Ast *try_parse_expression (Parser *par, U64 left_op);
 static Void try_parse_expression_list (Parser *par, ArrayAst *out);
 static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword);
 
@@ -215,6 +215,7 @@ static Ast *parse_fn (Parser *par) {
             if (! lex_try_peek(lex, TOKEN_IDENT)) break;
             Ast *arg = parse_var_def(par, false, false);
             arg->flags |= AST_IS_FN_ARG | AST_IS_LOCAL_VAR;
+            if (cast(AstVarDef*, arg)->init) cast(AstVarDef*, arg)->init->flags |= AST_MUST_EVAL;
             array_push(&cast(AstBaseFn*, node)->inputs, arg);
             if (! lex_try_eat(lex, ',')) break;
         }
@@ -402,6 +403,12 @@ static Ast *parse_call (Parser *par, Ast *lhs) {
     while (true) {
         if (lex_try_peek(lex, ')')) {
             break;
+        } else if (lex_try_peek(lex, TOKEN_IDENT) && lex_try_peek_nth(lex, 2, '=')) {
+            Auto arg = make_node(par, AstCallNamedArg);
+            arg->name = lex_eat(lex)->str;
+            lex_eat(lex);
+            arg->arg = parse_expression(par, 0);
+            array_push(&node->args, complete_node(par, arg));
         } else {
             array_push(&node->args, parse_expression(par, 0));
         }

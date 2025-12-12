@@ -1,10 +1,21 @@
 fn main {
+    fn bar (x: Int) -> Int {
+        return x + 42;
+    }
+
+    fn foo (x: Int = bar(42)) {
+        .print(x);
+    }
+
+    foo();
 }
 
 /*
 fn main {
     test_var_defs();
     test_fn_calls();
+    test_named_call_args();
+    test_default_fn_args();
     test_ifs();
     test_enums();
     test_records();
@@ -12,6 +23,28 @@ fn main {
     test_option_types();
     test_while();
     register_stress_test();
+}
+
+fn test_default_fn_args {
+    fn bar (x: Int) -> Int {
+        return x + 42;
+    }
+
+    fn foo (x: Int = bar(42)) {
+        .print(x);
+    }
+
+    foo();
+}
+
+fn test_named_call_args {
+    fn foo (x: Int, y: String, z: []Int) {
+        .print(x);
+        .print(y);
+        .print(z);
+    }
+
+    foo(z=[1, 2, 3], x=42, y="hello");
 }
 
 fn test_enums {

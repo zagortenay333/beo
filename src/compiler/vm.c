@@ -206,7 +206,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         emit_expression(em, n->expr, result_reg);
     } break;
 
-    case AST_NIL: { 
+    case AST_NIL: {
         emit_const(em, result_reg, (VmReg){ .tag = VM_REG_NIL });
     } break;
 
@@ -305,7 +305,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             reg_pop(em);
             reg_pop(em);
         } else if (t->tag == TYPE_ENUM) {
-            emit_const(em, result_reg, sem_get_const_val(sem, n->sem_edge));
+            VmReg reg = sem_get_const_val(sem, n->sem_edge);
+            assert_dbg(reg.tag == VM_REG_INT);
+            emit_const(em, result_reg, reg);
         } else {
             badpath;
         }
@@ -342,6 +344,12 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     case AST_FN: {
         U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, expr));
         array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
+    } break;
+
+    case AST_CALL_DEFAULT_ARG: {
+        Auto n = cast(AstCallDefaultArg*, expr);
+        VmReg val = sem_get_const_val(em->vm->sem->sem, n->arg);
+        emit_const(em, result_reg, val);
     } break;
 
     case AST_IDENT: {
@@ -777,9 +785,8 @@ static Void gc_run (Vm *vm) {
             if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
         }
 
-        array_iter (reg, &vm->globals, *) {
-            if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
-        }
+        array_iter (reg, &vm->globals, *)   if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
+        array_iter (reg, &vm->constants, *) if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
     }
 
     while (work_set.count) {
