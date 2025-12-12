@@ -216,6 +216,7 @@ static Ast *parse_record (Parser *par) {
     Auto node = make_node(par, AstRecord);
 
     lex_eat_this(lex, TOKEN_RECORD);
+    try_parse_attributes(cast(Ast*, node)->id,);
     Token *name = lex_try_eat(lex, TOKEN_IDENT);
     if (name) node->name = name->str;
     lex_eat_this(lex, '{');
@@ -245,6 +246,7 @@ static Ast *parse_enum_field (Parser *par) {
 static Ast *parse_enum (Parser *par) {
     Auto node = make_node(par, AstEnum);
     lex_eat_this(lex, TOKEN_ENUM);
+    try_parse_attributes(cast(Ast*, node)->id,);
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
     lex_eat_this(lex, '{');
 
@@ -276,6 +278,7 @@ static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword) 
 
     if (with_keyword) {
         lex_eat_this(lex, TOKEN_VAR);
+        try_parse_attributes(cast(Ast*, node)->id,);
     }
 
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
@@ -290,6 +293,7 @@ static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword) 
 static Ast *parse_fn (Parser *par) {
     Auto node = make_node(par, AstFn);
     lex_eat_this(lex, TOKEN_FN);
+    try_parse_attributes(cast(Ast*, node)->id,);
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
 
     if (lex_try_eat(lex, '(')) {
@@ -771,6 +775,7 @@ static Ast *parse_return (Parser *par) {
 static Ast *parse_break (Parser *par) {
     Auto node = make_node(par, AstBreak);
     lex_eat_this(lex, TOKEN_BREAK);
+    try_parse_attributes(cast(Ast*, node)->id,);
     Token *token = lex_try_eat(lex, TOKEN_IDENT);
     if (token) node->label = token->str;
     lex_eat_this(lex, ';');
@@ -780,6 +785,7 @@ static Ast *parse_break (Parser *par) {
 static Ast *parse_continue (Parser *par) {
     Auto node = make_node(par, AstContinue);
     lex_eat_this(lex, TOKEN_CONTINUE);
+    try_parse_attributes(cast(Ast*, node)->id,);
     Token *token = lex_try_eat(lex, TOKEN_IDENT);
     if (token) node->label = token->str;
     lex_eat_this(lex, ';');
@@ -789,6 +795,11 @@ static Ast *parse_continue (Parser *par) {
 static Ast *parse_while (Parser *par) {
     Auto node = make_node(par, AstWhile);
     lex_eat_this(lex, TOKEN_WHILE);
+
+    try_parse_attributes(cast(Ast*, node)->id, {
+        if (lex_try_peek(lex, TOKEN_IDENT)) node->label = lex_eat(lex)->str;
+    });
+
     node->cond = parse_expression_before_brace(par);
     parse_block_out(par, &node->statements);
     return complete_node(par, node);
@@ -797,6 +808,7 @@ static Ast *parse_while (Parser *par) {
 static Ast *parse_if (Parser *par) {
     Auto node = make_node(par, AstIf);
     lex_eat_this(lex, TOKEN_IF);
+    try_parse_attributes(cast(Ast*, node)->id,);
     node->cond = parse_expression_before_brace(par);
     node->then_arm = parse_block(par);
     if (lex_try_eat(lex, TOKEN_ELSE)) node->else_arm = lex_try_peek(lex, TOKEN_IF) ? parse_if(par) : parse_block(par);
@@ -838,6 +850,7 @@ static Ast *parse_block (Parser *par) {
 static Ast *parse_defer (Parser *par) {
     Auto node = make_node(par, AstDefer);
     lex_eat_this(lex, TOKEN_DEFER);
+    try_parse_attributes(cast(Ast*, node)->id,);
 
     if (lex_try_peek(lex, TOKEN_DO)) {
         node->stmt = parse_block(par);

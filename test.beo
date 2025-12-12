@@ -1,4 +1,8 @@
 fn main {
+    while:outer 1 < 2 {
+        while:inner 1 < 2 {
+        }
+    }
 }
 
 /*

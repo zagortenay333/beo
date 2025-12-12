@@ -221,7 +221,7 @@ istruct (AstStringLiteral)     { Ast base; IString *str; };
 istruct (AstSub)               { AstBaseBinary base; };
 istruct (AstTuple)             { Ast base; ArrayAst members; };
 istruct (AstVarDef)            { Ast base; IString *name; Ast *constraint, *init; };
-istruct (AstWhile)             { Ast base; Ast *cond; ArrayAst statements; };
+istruct (AstWhile)             { Ast base; IString *label; Ast *cond; ArrayAst statements; };
 
 extern CString ast_tag_to_cstr       [AST_TAG_COUNT];
 extern U64     ast_get_node_size     [AST_TAG_COUNT];
