@@ -1,3 +1,15 @@
+// imports
+// distinct types
+// file scope
+// labeled break/continue
+// typeof
+// must_assign_result fn directive
+// unreachable code warning
+// assert builtin
+// raising an error that is caught by setjmp on the c side
+// len builtin
+// union types ala typescript
+
 fn main {
     while:outer 1 < 2 {
         while:inner 1 < 2 {
