@@ -3,11 +3,12 @@ fn main {
         return x + 42;
     }
 
-    fn foo (x: Int = bar(42)) {
+    fn foo (x: Int = bar(42), y: String) {
         .print(x);
+        .print(y);
     }
 
-    foo();
+    foo("asf");
 }
 
 /*
