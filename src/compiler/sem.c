@@ -1120,6 +1120,13 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_BUILTIN_STACK_TRACE: {
+        Scope *fn_scope = sem_scope_get_ancestor(get_scope(node), AST_FN);
+        if (! fn_scope) return error_n(sem, node, "The builtin .stack_trace() must appear inside a function.");
+        set_type(node, sem->core_types.type_String);
+        return RESULT_OK;
+    }
+
     case AST_CAST: {
         // As of now we only have implicit casts so there is
         // not much to check here.

@@ -407,6 +407,10 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         emit_expression(em, n->op, result_reg);
     } break;
 
+    case AST_BUILTIN_STACK_TRACE: {
+        array_push_n(&em->vm->instructions, VM_OP_STACK_TRACE, result_reg);
+    } break;
+
     case AST_BUILTIN_IS_NIL: {
         Auto n = cast(AstBaseUnary*, expr);
         emit_expression(em, n->op, result_reg);
@@ -702,6 +706,7 @@ Void vm_print (Vm *vm) {
             case VM_OP_JUMP_IF_FALSE: printf("jump_if_false %u r%u\n", read_u32(&cur[1]), cur[5]); cur += 6;  break;
             case VM_OP_JUMP_IF_TRUE:  printf("jump_if_true %u r%u\n", read_u32(&cur[1]), cur[5]); cur += 6; break;
             case VM_OP_PRINT:         printf("print r%u\n", cur[1]); cur += 2; break;
+            case VM_OP_STACK_TRACE:   printf("r%u = stack_trace\n", cur[1]); cur += 2; break;
             case VM_OP_IS_NIL:        printf("r%u = is_nil r%u\n", cur[2], cur[1]); cur += 3; break;
             case VM_OP_RETURN:        printf("return\n"); cur++; break;
             case VM_OP_MOVE:          printf("r%u = r%u\n", cur[1], cur[2]); cur += 3; break;
@@ -878,12 +883,10 @@ static VmObj *gc_new_record (Vm *vm) {
     return cast(VmObj*, obj);
 }
 
-static Void print_call_stack (Vm *vm) {
-    printf("Stack Trace:\n");
-
-    array_iter_back (cr, &vm->call_stack, *) {
-        printf("    fn<%.*s> pc=%u\n", STR(*cr->fn->ast->name), cr->pc);
-    }
+static String stack_trace (Vm *vm, Mem *mem) {
+    AString astr = astr_new(mem);
+    array_iter_back (cr, &vm->call_stack, *) astr_push_fmt(&astr, "    fn<%.*s> pc=%u\n", STR(*cr->fn->ast->name), cr->pc);
+    return astr_to_str(&astr);
 }
 
 // @todo A lot of the assert_always() should be turned into proper
@@ -1024,7 +1027,9 @@ static Void run_loop (Vm *vm) {
 
             if (idx >= array->count) {
                 printf("Out of bounds index: (idx=%lu, len=%lu)\n", idx, array->count);
-                print_call_stack(vm);
+                tmem_new(tm);
+                String str = stack_trace(vm, tm);
+                printf("%.*s\n", STR(str));
                 goto done;
             } else {
                 array_set(array, idx, *val_reg);
@@ -1108,6 +1113,17 @@ static Void run_loop (Vm *vm) {
             cr->pc += 2;
             VmReg *reg = get_reg(vm, cr, pc[1]);
             print_reg(vm, reg, true, true);
+        } break;
+
+        case VM_OP_STACK_TRACE: {
+            cr->pc += 2;
+            VmReg *reg = get_reg(vm, cr, pc[1]);
+            tmem_new(tm);
+            String trace = stack_trace(vm, tm);
+            VmObj *obj = gc_new_string(vm, trace.count);
+            memcpy(cast(VmObjString*, obj)->string.data, trace.data, trace.count);
+            reg->obj = obj;
+            reg->tag = VM_REG_OBJ;
         } break;
 
         case VM_OP_IS_NIL: {

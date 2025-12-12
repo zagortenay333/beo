@@ -98,6 +98,7 @@ istruct (Interns);
     X(line)\
     X(nan)\
     X(print)\
+    X(stack_trace)\
     X(val)
 
 fenum (TokenTag, U64) {

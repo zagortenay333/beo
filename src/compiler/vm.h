@@ -45,6 +45,7 @@ istruct (VmObj);
     X(VM_OP_RECORD_NEW)\
     X(VM_OP_RECORD_SET)\
     X(VM_OP_RETURN)\
+    X(VM_OP_STACK_TRACE)\
     X(VM_OP_SUB)
 
 ienum (VmOp, U8) {

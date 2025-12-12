@@ -37,6 +37,7 @@ istruct (Interns);
     X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_LINE, AstBuiltinLine, 0, AST_MUST_EVAL)\
     X(AST_BUILTIN_FILE, AstBuiltinFile, 0, AST_MUST_EVAL)\
+    X(AST_BUILTIN_STACK_TRACE, AstBuiltinStackTrace, 0, 0)\
     X(AST_CALL, AstCall, 0, 0)\
     X(AST_CALL_DEFAULT_ARG, AstCallDefaultArg, 0, 0)\
     X(AST_CALL_NAMED_ARG, AstCallNamedArg, 0, 0)\
@@ -156,65 +157,66 @@ ienum (AstTag, U8) {
 #undef X
 
 // Fields starting with "sem_" are set by the Sem module.
-istruct (Ast)               { AstTag tag; AstFlags flags; AstId id; SrcPos pos; Type *sem_type; Scope *sem_scope; };
-istruct (AstBaseBinary)     { Ast base; Ast *op1, *op2; };
-istruct (AstBaseFn)         { Ast base; ArrayAst inputs; Ast *output; };
-istruct (AstBaseUnary)      { Ast base; Ast *op; };
+istruct (Ast)                  { AstTag tag; AstFlags flags; AstId id; SrcPos pos; Type *sem_type; Scope *sem_scope; };
+istruct (AstBaseBinary)        { Ast base; Ast *op1, *op2; };
+istruct (AstBaseFn)            { Ast base; ArrayAst inputs; Ast *output; };
+istruct (AstBaseUnary)         { Ast base; Ast *op; };
 
-istruct (AstAdd)            { AstBaseBinary base; };
-istruct (AstArrayLiteral)   { Ast base; Ast *lhs; ArrayAst inits; };
-istruct (AstArrayType)      { Ast base; Ast *element; };
-istruct (AstAssign)         { AstBaseBinary base; AstTag fused_op /* AST_ASSIGN for =, AST_ADD for +=, ... */; };
-istruct (AstBlock)          { Ast base; ArrayAst statements; };
-istruct (AstBoolLiteral)    { Ast base; Bool val; };
-istruct (AstBreak)          { Ast base; IString *label; Ast *sem_edge; };
-istruct (AstBuiltinPrint)   { AstBaseUnary base; };
-istruct (AstBuiltinIsNil)   { AstBaseUnary base; };
-istruct (AstBuiltinVal)     { AstBaseUnary base; };
-istruct (AstBuiltinFnName)  { Ast base; };
-istruct (AstBuiltinLine)    { Ast base; };
-istruct (AstBuiltinFile)    { Ast base; };
-istruct (AstCall)           { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
-istruct (AstCallDefaultArg) { Ast base; Ast *arg; };
-istruct (AstCallNamedArg)   { Ast base; IString *name; Ast *arg; };
-istruct (AstCast)           { Ast base; Ast *to, *expr; };
-istruct (AstContinue)       { Ast base; IString *label; Ast *sem_edge; };
-istruct (AstDiv)            { AstBaseBinary base; };
-istruct (AstDot)            { Ast base; Ast *lhs, *sem_edge; IString *rhs; };
-istruct (AstDummy)          { Ast base; };
-istruct (AstEnum)           { Ast base; IString *name; ArrayAst members; U64 scratch; };
-istruct (AstEnumField)      { Ast base; IString *name; Ast *init; };
-istruct (AstEqual)          { AstBaseBinary base; };
-istruct (AstFile)           { Ast base; IString *path; String content; ArrayAst statements; };
-istruct (AstFloatLiteral)   { Ast base; F64 val; };
-istruct (AstFn)             { AstBaseFn base; IString *name; ArrayAst statements; };
-istruct (AstFnType)         { AstBaseFn base; };
-istruct (AstGreater)        { AstBaseBinary base; };
-istruct (AstGreaterEqual)   { AstBaseBinary base; };
-istruct (AstIdent)          { Ast base; IString *name; Ast *sem_edge; };
-istruct (AstIf)             { Ast base; Ast *cond, *then_arm, *else_arm; };
-istruct (AstIndex)          { Ast base; Ast *lhs, *idx, *sem_edge; };
-istruct (AstIntLiteral)     { Ast base; I64 val; };
-istruct (AstLess)           { AstBaseBinary base; };
-istruct (AstLessEqual)      { AstBaseBinary base; };
-istruct (AstLogicalAnd)     { AstBaseBinary base; };
-istruct (AstLogicalOr)      { AstBaseBinary base; };
-istruct (AstMod)            { AstBaseBinary base; };
-istruct (AstMul)            { AstBaseBinary base; };
-istruct (AstNegate)         { AstBaseUnary base; };
-istruct (AstNil)            { Ast base; };
-istruct (AstNot)            { AstBaseUnary base; };
-istruct (AstNotEqual)       { AstBaseBinary base; };
-istruct (AstOptionType)     { AstBaseUnary base; };
-istruct (AstRecord)         { Ast base; IString *name; ArrayAst members; };
-istruct (AstRecordLitInit)  { Ast base; IString *name; Ast *val, *sem_edge; };
-istruct (AstRecordLiteral)  { Ast base; Ast *lhs; ArrayAstRecordLitInit inits; };
-istruct (AstReturn)         { Ast base; Ast *result, *sem_edge; };
-istruct (AstStringLiteral)  { Ast base; IString *str; };
-istruct (AstSub)            { AstBaseBinary base; };
-istruct (AstTuple)          { Ast base; ArrayAst members; };
-istruct (AstVarDef)         { Ast base; IString *name; Ast *constraint, *init; };
-istruct (AstWhile)          { Ast base; Ast *cond; ArrayAst statements; };
+istruct (AstAdd)               { AstBaseBinary base; };
+istruct (AstArrayLiteral)      { Ast base; Ast *lhs; ArrayAst inits; };
+istruct (AstArrayType)         { Ast base; Ast *element; };
+istruct (AstAssign)            { AstBaseBinary base; AstTag fused_op /* AST_ASSIGN for =, AST_ADD for +=, ... */; };
+istruct (AstBlock)             { Ast base; ArrayAst statements; };
+istruct (AstBoolLiteral)       { Ast base; Bool val; };
+istruct (AstBreak)             { Ast base; IString *label; Ast *sem_edge; };
+istruct (AstBuiltinPrint)      { AstBaseUnary base; };
+istruct (AstBuiltinIsNil)      { AstBaseUnary base; };
+istruct (AstBuiltinVal)        { AstBaseUnary base; };
+istruct (AstBuiltinFnName)     { Ast base; };
+istruct (AstBuiltinLine)       { Ast base; };
+istruct (AstBuiltinFile)       { Ast base; };
+istruct (AstBuiltinStackTrace) { Ast base; };
+istruct (AstCall)              { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
+istruct (AstCallDefaultArg)    { Ast base; Ast *arg; };
+istruct (AstCallNamedArg)      { Ast base; IString *name; Ast *arg; };
+istruct (AstCast)              { Ast base; Ast *to, *expr; };
+istruct (AstContinue)          { Ast base; IString *label; Ast *sem_edge; };
+istruct (AstDiv)               { AstBaseBinary base; };
+istruct (AstDot)               { Ast base; Ast *lhs, *sem_edge; IString *rhs; };
+istruct (AstDummy)             { Ast base; };
+istruct (AstEnum)              { Ast base; IString *name; ArrayAst members; U64 scratch; };
+istruct (AstEnumField)         { Ast base; IString *name; Ast *init; };
+istruct (AstEqual)             { AstBaseBinary base; };
+istruct (AstFile)              { Ast base; IString *path; String content; ArrayAst statements; };
+istruct (AstFloatLiteral)      { Ast base; F64 val; };
+istruct (AstFn)                { AstBaseFn base; IString *name; ArrayAst statements; };
+istruct (AstFnType)            { AstBaseFn base; };
+istruct (AstGreater)           { AstBaseBinary base; };
+istruct (AstGreaterEqual)      { AstBaseBinary base; };
+istruct (AstIdent)             { Ast base; IString *name; Ast *sem_edge; };
+istruct (AstIf)                { Ast base; Ast *cond, *then_arm, *else_arm; };
+istruct (AstIndex)             { Ast base; Ast *lhs, *idx, *sem_edge; };
+istruct (AstIntLiteral)        { Ast base; I64 val; };
+istruct (AstLess)              { AstBaseBinary base; };
+istruct (AstLessEqual)         { AstBaseBinary base; };
+istruct (AstLogicalAnd)        { AstBaseBinary base; };
+istruct (AstLogicalOr)         { AstBaseBinary base; };
+istruct (AstMod)               { AstBaseBinary base; };
+istruct (AstMul)               { AstBaseBinary base; };
+istruct (AstNegate)            { AstBaseUnary base; };
+istruct (AstNil)               { Ast base; };
+istruct (AstNot)               { AstBaseUnary base; };
+istruct (AstNotEqual)          { AstBaseBinary base; };
+istruct (AstOptionType)        { AstBaseUnary base; };
+istruct (AstRecord)            { Ast base; IString *name; ArrayAst members; };
+istruct (AstRecordLitInit)     { Ast base; IString *name; Ast *val, *sem_edge; };
+istruct (AstRecordLiteral)     { Ast base; Ast *lhs; ArrayAstRecordLitInit inits; };
+istruct (AstReturn)            { Ast base; Ast *result, *sem_edge; };
+istruct (AstStringLiteral)     { Ast base; IString *str; };
+istruct (AstSub)               { AstBaseBinary base; };
+istruct (AstTuple)             { Ast base; ArrayAst members; };
+istruct (AstVarDef)            { Ast base; IString *name; Ast *constraint, *init; };
+istruct (AstWhile)             { Ast base; Ast *cond; ArrayAst statements; };
 
 extern CString ast_tag_to_cstr       [AST_TAG_COUNT];
 extern U64     ast_get_node_size     [AST_TAG_COUNT];

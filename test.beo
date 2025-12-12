@@ -1,6 +1,4 @@
 fn main {
-    .print(.line());
-    .print(.file());
 }
 
 /*
@@ -29,6 +27,8 @@ fn test_some_directives {
     test_start(.fn_name());
     .print(.fn_name());
     .print(.line());
+    .print(.file());
+    .print(.stack_trace());
 }
 
 fn test_default_fn_args {
