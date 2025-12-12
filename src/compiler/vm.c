@@ -418,6 +418,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
 static Void emit_statement (Emitter *em, Ast *stmt) {
     switch (stmt->tag) {
+    case AST_FN: break;
     case AST_ENUM: break;
     case AST_RECORD: break;
 
