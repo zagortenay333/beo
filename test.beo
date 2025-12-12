@@ -9,6 +9,7 @@
 // raising an error that is caught by setjmp on the c side
 // len builtin
 // union types ala typescript
+// We don't handle the case when initializers are omitted from record literals.
 
 fn main {
     while:outer 1 < 2 {
@@ -174,13 +175,6 @@ fn test_var_defs {
 
 fn test_records {
     test_start(.fn_name());
-
-    // @todo Right now we don't handle the case when initializers
-    // are omitted from record literals:
-    // 
-    //   var x = Foo{};
-    //   x.x; // This has value nil...
-    //
 
     record Foo {
         x: Int;
