@@ -505,7 +505,7 @@ static Result scope_add (Sem *sem, Scope *scope, IString *key, Ast *val, Ast *er
     return RESULT_OK;
 }
 
-static Scope *scope_get_ancestor (Scope *s, AstTag tag) {
+Scope *sem_scope_get_ancestor (Scope *s, AstTag tag) {
     for (; s; s = s->parent) if (s->owner->tag == tag) return s;
     return 0;
 }
@@ -1019,8 +1019,9 @@ static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_arg
         if (def == ARRAY_IDX) continue;
 
         Ast *arg2 = array_get(call_args, def);
-        if (arg2 && (arg2->tag != AST_CALL_NAMED_ARG || name == cast(AstCallNamedArg*, arg2)->name))
+        if (arg2 && (arg2->tag != AST_CALL_NAMED_ARG || name == cast(AstCallNamedArg*, arg2)->name)) {
             return error_nn(sem, arg, arg2, "Duplicate call args.");
+        }
 
         array_swap(call_args, def, ARRAY_IDX);
         ARRAY_IDX--; // To stay on current index next iteration.
@@ -1098,6 +1099,13 @@ static Result check_node (Sem *sem, Ast *node) {
         Type *t = try_get_type_v(n->op);
         if (t->tag != TYPE_OPTION) return error_nt(sem, node, t, "expected an Option type.");
         set_type(node, sem->core_types.type_Bool);
+        return RESULT_OK;
+    }
+
+    case AST_BUILTIN_FN_NAME: {
+        Scope *fn_scope = sem_scope_get_ancestor(get_scope(node), AST_FN);
+        if (! fn_scope) return error_n(sem, node, "The builtin .fn_name() must appear inside a function.");
+        set_type(node, sem->core_types.type_String);
         return RESULT_OK;
     }
 
@@ -1409,7 +1417,7 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_RETURN: {
         Auto n = cast(AstReturn*, node);
-        Scope *scope = scope_get_ancestor(get_scope(node), AST_FN);
+        Scope *scope = sem_scope_get_ancestor(get_scope(node), AST_FN);
         if (! scope) return error_n(sem, node, "A return can only appear inside functions.");
         Auto fn = cast(AstBaseFn*, scope->owner);
         if (!n->result != !fn->output) return error_nn(sem, cast(Ast*, fn), node, "Number of return values is not matching.");
@@ -1420,7 +1428,7 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_BREAK:
     case AST_CONTINUE: {
-        Scope *scope = scope_get_ancestor(get_scope(node), AST_WHILE);
+        Scope *scope = sem_scope_get_ancestor(get_scope(node), AST_WHILE);
         if (! scope) return error_n(sem, node, "A '%s' can only appear inside a while loop.", node->tag == AST_CONTINUE ? "continue" : "break");
         sem_set_target(sem, node, scope->owner);
         return RESULT_OK;

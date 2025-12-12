@@ -86,9 +86,10 @@ istruct (Scope) {
 
 #define sem_get_type(SEM, NODE) ((NODE)->sem_type)
 
-Sem          *sem_new            (Mem *, Vm *, Interns *);
-SemProgram   *sem_check          (Sem *, String);
-Void          sem_print_node     (Sem *, AString *, Ast *);
-Void          sem_print_node_out (Sem *, Ast *);
-VmReg         sem_get_const_val  (Sem *, Ast *);
-SemCoreTypes *sem_get_core_types (Sem *);
+Sem          *sem_new                (Mem *, Vm *, Interns *);
+SemProgram   *sem_check              (Sem *, String);
+Void          sem_print_node         (Sem *, AString *, Ast *);
+Void          sem_print_node_out     (Sem *, Ast *);
+VmReg         sem_get_const_val      (Sem *, Ast *);
+SemCoreTypes *sem_get_core_types     (Sem *);
+Scope        *sem_scope_get_ancestor (Scope *, AstTag);

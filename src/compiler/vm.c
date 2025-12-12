@@ -383,6 +383,13 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         array_push_n(&em->vm->instructions, VM_OP_PRINT, result_reg);
     } break;
 
+    case AST_BUILTIN_FN_NAME: {
+        Scope *fn_scope = sem_scope_get_ancestor(expr->sem_scope, AST_FN);
+        assert_dbg(fn_scope->owner->tag == AST_FN);
+        IString *fn_name = cast(AstFn*, fn_scope->owner)->name;
+        emit_const_string(em, *fn_name, result_reg);
+    } break;
+
     case AST_BUILTIN_VAL: {
         Auto n = cast(AstBaseUnary*, expr);
         emit_expression(em, n->op, result_reg);

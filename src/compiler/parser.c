@@ -483,6 +483,15 @@ static Ast *parse_special_float (Parser *par, F64 val) {
     return complete_node(par, node);
 }
 
+static Ast *parse_builtin_fn_name (Parser *par) {
+    Auto node = make_node(par, AstBuiltinFnName);
+    lex_eat_this(lex, '.');
+    lex_eat_this(lex, TOKEN_IDENT);
+    lex_eat_this(lex, '(');
+    lex_eat_this(lex, ')');
+    return complete_node(par, node);
+}
+
 static Ast *parse_builtin_call (Parser *par) {
     Token *token = lex_peek_nth(lex, 2);
     if (token->tag != TOKEN_IDENT) par_error_pos(par, token->pos, "Expected identifier.");
@@ -491,6 +500,7 @@ static Ast *parse_builtin_call (Parser *par) {
     if (token->str == par->interns->builtin_val) return parse_builtin_val(par);
     if (token->str == par->interns->builtin_nan) return parse_special_float(par, NAN);
     if (token->str == par->interns->builtin_inf) return parse_special_float(par, INFINITY);
+    if (token->str == par->interns->builtin_fn_name) return parse_builtin_fn_name(par);
     par_error(par, "Unknown builtin.");
 }
 

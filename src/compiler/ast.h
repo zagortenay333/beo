@@ -33,6 +33,7 @@ istruct (Interns);
     X(AST_BREAK, AstBreak, 0, 0)\
     X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
+    X(AST_BUILTIN_FN_NAME, AstBuiltinFnName, 0, AST_MUST_EVAL)\
     X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
     X(AST_CALL_DEFAULT_ARG, AstCallDefaultArg, 0, 0)\
@@ -168,6 +169,7 @@ istruct (AstBreak)          { Ast base; IString *label; Ast *sem_edge; };
 istruct (AstBuiltinPrint)   { AstBaseUnary base; };
 istruct (AstBuiltinIsNil)   { AstBaseUnary base; };
 istruct (AstBuiltinVal)     { AstBaseUnary base; };
+istruct (AstBuiltinFnName)  { Ast base; };
 istruct (AstCall)           { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
 istruct (AstCallDefaultArg) { Ast base; Ast *arg; };
 istruct (AstCallNamedArg)   { Ast base; IString *name; Ast *arg; };
