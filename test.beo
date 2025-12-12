@@ -7,7 +7,7 @@ fn main {
     test_fn_calls();
     test_named_call_args();
     test_default_fn_args();
-    test_some_directives();
+    test_some_builtins();
     test_defer();
     test_ifs();
     test_enums();
@@ -52,7 +52,7 @@ fn test_defer {
     }
 }
 
-fn test_some_directives {
+fn test_some_builtins {
     test_start(.fn_name());
     .print(.fn_name());
     .print(.line());
@@ -160,7 +160,7 @@ fn test_records {
     test_start(.fn_name());
 
     // @todo Right now we don't handle the case when initializers
-    // are omitted from record literal:
+    // are omitted from record literals:
     // 
     //   var x = Foo{};
     //   x.x; // This has value nil...

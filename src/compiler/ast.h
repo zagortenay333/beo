@@ -31,13 +31,13 @@ istruct (Interns);
     X(AST_BLOCK, AstBlock, 0, AST_CREATES_SCOPE)\
     X(AST_BOOL_LITERAL, AstBoolLiteral, 0, AST_IS_LITERAL)\
     X(AST_BREAK, AstBreak, 0, 0)\
-    X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
-    X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
-    X(AST_BUILTIN_FN_NAME, AstBuiltinFnName, 0, AST_MUST_EVAL)\
-    X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
-    X(AST_BUILTIN_LINE, AstBuiltinLine, 0, AST_MUST_EVAL)\
     X(AST_BUILTIN_FILE, AstBuiltinFile, 0, AST_MUST_EVAL)\
+    X(AST_BUILTIN_FN_NAME, AstBuiltinFnName, 0, AST_MUST_EVAL)\
+    X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
+    X(AST_BUILTIN_LINE, AstBuiltinLine, 0, AST_MUST_EVAL)\
+    X(AST_BUILTIN_PRINT, AstBuiltinPrint, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_STACK_TRACE, AstBuiltinStackTrace, 0, 0)\
+    X(AST_BUILTIN_VAL, AstBuiltinVal, AST_BASE_UNARY, 0)\
     X(AST_CALL, AstCall, 0, 0)\
     X(AST_CALL_DEFAULT_ARG, AstCallDefaultArg, 0, 0)\
     X(AST_CALL_NAMED_ARG, AstCallNamedArg, 0, 0)\
@@ -69,6 +69,7 @@ istruct (Interns);
     X(AST_NEGATE, AstNegate, AST_BASE_UNARY, 0)\
     X(AST_NIL, AstNil, 0, AST_IS_LITERAL)\
     X(AST_NOT, AstNot, AST_BASE_UNARY, 0)\
+    X(AST_NOTE, AstNote, 0, 0)\
     X(AST_NOT_EQUAL, AstNotEqual, AST_BASE_BINARY, 0)\
     X(AST_OPTION_TYPE, AstOptionType, AST_BASE_UNARY, AST_IS_TYPE)\
     X(AST_RECORD, AstRecord, 0, AST_IS_TYPE | AST_CREATES_SCOPE)\
@@ -171,13 +172,13 @@ istruct (AstAssign)            { AstBaseBinary base; AstTag fused_op /* AST_ASSI
 istruct (AstBlock)             { Ast base; ArrayAst statements; };
 istruct (AstBoolLiteral)       { Ast base; Bool val; };
 istruct (AstBreak)             { Ast base; IString *label; Ast *sem_edge; };
-istruct (AstBuiltinPrint)      { AstBaseUnary base; };
-istruct (AstBuiltinIsNil)      { AstBaseUnary base; };
-istruct (AstBuiltinVal)        { AstBaseUnary base; };
-istruct (AstBuiltinFnName)     { Ast base; };
-istruct (AstBuiltinLine)       { Ast base; };
 istruct (AstBuiltinFile)       { Ast base; };
+istruct (AstBuiltinFnName)     { Ast base; };
+istruct (AstBuiltinIsNil)      { AstBaseUnary base; };
+istruct (AstBuiltinLine)       { Ast base; };
+istruct (AstBuiltinPrint)      { AstBaseUnary base; };
 istruct (AstBuiltinStackTrace) { Ast base; };
+istruct (AstBuiltinVal)        { AstBaseUnary base; };
 istruct (AstCall)              { Ast base; ArrayAst args; Ast *lhs, *sem_edge; };
 istruct (AstCallDefaultArg)    { Ast base; Ast *arg; };
 istruct (AstCallNamedArg)      { Ast base; IString *name; Ast *arg; };
@@ -210,6 +211,7 @@ istruct (AstNegate)            { AstBaseUnary base; };
 istruct (AstNil)               { Ast base; };
 istruct (AstNot)               { AstBaseUnary base; };
 istruct (AstNotEqual)          { AstBaseBinary base; };
+istruct (AstNote)              { Ast base; IString *key; Ast *val; };
 istruct (AstOptionType)        { AstBaseUnary base; };
 istruct (AstRecord)            { Ast base; IString *name; ArrayAst members; };
 istruct (AstRecordLitInit)     { Ast base; IString *name; Ast *val, *sem_edge; };
@@ -310,12 +312,13 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_CAST:             FM(F, AstCast, to); FM(F, AstCast, expr); break;\
     case AST_DEFER:            FM(F, AstDefer, stmt); break;\
     case AST_DOT:              FM(F, AstDot, lhs); break;\
+    case AST_ENUM:             AM(A, I, AstEnum, members); break;\
+    case AST_ENUM_FIELD:       FM(F, AstEnumField, init); break;\
     case AST_FILE:             AM(A, I, AstFile, statements); break;\
     case AST_FN:               AM(A, I, AstFn, statements); break;\
     case AST_IF:               FM(F, AstIf, cond); FM(F, AstIf, then_arm); FM(F, AstIf, else_arm); break;\
-    case AST_ENUM:             AM(A, I, AstEnum, members); break;\
-    case AST_ENUM_FIELD:       FM(F, AstEnumField, init); break;\
     case AST_INDEX:            FM(F, AstIndex, lhs); FM(F, AstIndex, idx); break;\
+    case AST_NOTE:             FM(F, AstNote, val); break;\
     case AST_RECORD:           AM(A, I, AstRecord, members); break;\
     case AST_RECORD_LITERAL:   FM(F, AstRecordLiteral, lhs); AM(A, I, AstRecordLiteral, inits); break;\
     case AST_RECORD_LIT_INIT:  FM(F, AstRecordLitInit, val); break;\

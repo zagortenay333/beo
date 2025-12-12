@@ -13,6 +13,7 @@ istruct (Parser) {
     Interns *interns;
     Lexer *lexer;
     Bool brace_ends_expression;
+    Map(AstId, ArrayAstNote*) notes;
 };
 
 #define lex (par->lexer)
@@ -74,6 +75,87 @@ static Void *make_node_lhs_by_tag (Parser *par, AstTag tag, Ast *lhs) {
 
 #define make_node(PAR, T)        cast(T*, make_node_by_tag(PAR, e##T))
 #define make_node_lhs(PAR, T, L) cast(T*, make_node_lhs_by_tag(PAR, e##T, L))
+
+ArrayAstNote *par_get_notes (Parser *par, AstId id) {
+    return map_get_ptr(&par->notes, id);
+}
+
+static Void attach_note (Parser *par, AstId id, AstNote *note) {
+    ArrayAstNote *notes = par_get_notes(par, id);
+
+    if (! notes) {
+        notes = mem_new(par->mem, ArrayAstNote);
+        array_init(notes, par->mem);
+        map_add(&par->notes, id, notes);
+    }
+
+    AstNote **prev = array_find_ref(notes, (*IT)->key == note->key);
+    if (prev) *prev = note;
+    else      array_push(notes, note);
+}
+
+static Ast *try_parse_note (Parser *par, AstId id) {
+    if (! lex_try_eat(lex, '#')) return 0;
+    Auto note = make_node(par, AstNote);
+    note->key = lex_eat_this(lex, TOKEN_IDENT)->str;
+    if (lex_try_eat(lex, '=')) note->val = parse_expression(par, 0);
+    attach_note(par, id, note);
+    return complete_node(par, note);
+}
+
+#define try_peek_attribute(ATTR) ({\
+    Token *token = lex_try_peek(lex, TOKEN_IDENT);\
+    (token && token->str == par->interns->attr_##ATTR) ? token : 0;\
+})
+
+#define try_eat_attribute(ATTR) ({\
+    Token *token = lex_try_peek(lex, TOKEN_IDENT);\
+    (token && token->str == par->interns->attr_##ATTR) ? lex_eat(lex) : 0;\
+})
+
+#define eat_attribute(ATTR) ({\
+    Token *token = lex_eat_this(lex, TOKEN_IDENT);\
+    IString *attr = par->interns->attr_##ATTR;\
+    if (token->str != attr) par_error_pos(par, token->pos, "Expected attribute '%.*s'.", STR(*attr));\
+    token;\
+})
+
+#define starts_with_attribute(ATTR) ({\
+    Bool result = false;\
+    if (lex_try_peek_nth(lex, 2, ':')) {\
+        Token *token = lex_peek_nth(lex, 3);\
+        if (token->tag == TOKEN_IDENT) {\
+            result = (token->str == par->interns->attr_##ATTR);\
+        } else if (token->tag == '(') {\
+            token = lex_try_peek_nth(lex, 4, TOKEN_IDENT);\
+            result = (token && token->str == par->interns->attr_##ATTR);\
+        }\
+    }\
+    result;\
+})
+
+#define parse_attributes(NODE_ID, PRE_LOOP, ...) ({\
+    def1(id, NODE_ID);\
+    lex_eat_this(lex, ':');\
+    Bool _(in_parens) = lex_try_eat(lex, '(');\
+    U64 _(start) = lex_peek(lex)->pos.offset;\
+    PRE_LOOP;\
+    lex_try_eat(lex, ',');\
+    do {\
+        if (! try_parse_note(par, id)) { __VA_ARGS__; }\
+    } while (_(in_parens) && lex_try_eat(lex, ','));\
+    if (_(in_parens)) {\
+        if (!lex_try_eat(lex, ')')) par_error(par, "Invalid attribute.");\
+    } else if (_(start) == lex_peek(lex)->pos.offset) {\
+        par_error(par, "Invalid attribute.");\
+    }\
+})
+
+#define try_parse_attributes(NODE_ID, PRE_LOOP, ...) ({\
+    if (lex_try_peek(lex, ':')) {\
+        parse_attributes(NODE_ID, PRE_LOOP, __VA_ARGS__);\
+    }\
+})
 
 #define is_left_associative(token_tag) true
 #define prefix(token_tag) (token_tag + TOKEN_TAG_COUNT)
@@ -849,5 +931,6 @@ Parser *par_new (Mem *mem, Interns *interns) {
     par->mem = mem;
     par->interns = interns;
     par->lexer = lex_new(interns, mem);
+    map_init(&par->notes, mem);
     return par;
 }
