@@ -1,7 +1,5 @@
 // imports
 // file scope
-// assert builtin
-// raising an error that is caught by setjmp on the c side
 // We don't handle the case when initializers are omitted from record literals.
 
 fn main {
