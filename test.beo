@@ -9,18 +9,6 @@
 // We don't handle the case when initializers are omitted from record literals.
 
 fn main {
-    {
-        type:alias Foo = Int;
-        var x: Foo = 42;
-        var y: Int = 42;
-        x = y;
-    }
-
-    {
-        type Foo = Int;
-        type Bar = Foo;
-        var x: Bar = 42;
-    }
 }
 
 /*
@@ -62,6 +50,12 @@ fn test_type_alias_and_distinct {
         type Foo = Int;
         type Bar = Foo;
         var x: Bar = 42;
+    }
+
+    {
+        type Bar = ?Int;
+        var x: Bar = 42;
+        var y: Bar = nil;
     }
 }
 

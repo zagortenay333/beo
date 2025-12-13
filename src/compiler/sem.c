@@ -769,7 +769,7 @@ static Void implicit_cast (Sem *sem, Ast **pn, Type *to_type) {
 
     Ast *c = ast_alloc(sem->mem, AST_CAST, 0);
     c->pos = n->pos;
-    c->flags |= (n->flags & AST_MUST_EVAL);
+    c->flags |= (n->flags & (AST_MUST_EVAL|AST_IS_LITERAL));
     cast(AstCast*, c)->expr = n;
 
     add_to_check_list(sem, c, get_scope(n));
