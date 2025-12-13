@@ -1412,6 +1412,13 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_TYPEOF: {
+        Auto n = cast(AstBaseUnary*, node);
+        Type *t = try_get_type(n->op);
+        set_type(node, t);
+        return RESULT_OK;
+    }
+                             
     case AST_OPTION_TYPE: {
         Auto n = cast(AstBaseUnary*, node);
         Type *t = try_get_type_t(n->op);
@@ -1464,7 +1471,7 @@ static Result check_node (Sem *sem, Ast *node) {
             }
         }
 
-        return error_n(sem, node, "Could not find corresponding while loop for %s'.", (node->tag == AST_BREAK) ? "break" : "continue");
+        return error_n(sem, node, "Could not find corresponding while loop for '%s'.", (node->tag == AST_BREAK) ? "break" : "continue");
     }
 
     case AST_ASSIGN: {

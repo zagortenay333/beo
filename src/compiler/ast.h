@@ -79,6 +79,7 @@ istruct (Interns);
     X(AST_STRING_LITERAL, AstStringLiteral, 0, AST_IS_LITERAL)\
     X(AST_SUB, AstSub, AST_BASE_BINARY, 0)\
     X(AST_TUPLE, AstTuple, 0, 0)\
+    X(AST_TYPEOF, AstTypeof, AST_BASE_UNARY, AST_IS_TYPE)\
     X(AST_VAR_DEF, AstVarDef, 0, AST_IS_LVALUE)\
     X(AST_WHILE, AstWhile, 0, AST_CREATES_SCOPE)
 
@@ -220,6 +221,7 @@ istruct (AstReturn)            { Ast base; Ast *result, *sem_edge; };
 istruct (AstStringLiteral)     { Ast base; IString *str; };
 istruct (AstSub)               { AstBaseBinary base; };
 istruct (AstTuple)             { Ast base; ArrayAst members; };
+istruct (AstTypeof)            { AstBaseUnary base; };
 istruct (AstVarDef)            { Ast base; IString *name; Ast *constraint, *init; };
 istruct (AstWhile)             { Ast base; IString *label; Ast *cond; ArrayAst statements; };
 

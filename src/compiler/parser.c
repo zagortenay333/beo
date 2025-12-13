@@ -635,6 +635,15 @@ static Ast *parse_nil (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_typeof (Parser *par) {
+    Auto node = make_node(par, AstTypeof);
+    lex_eat_this(lex, TOKEN_TYPEOF);
+    lex_eat_this(lex, '(');
+    cast(AstBaseUnary*, node)->op = parse_expression(par, 0);
+    lex_eat_this(lex, ')');
+    return complete_node(par, node);
+}
+
 static Ast *parse_expression_with_lhs (Parser *par, Ast *lhs) {
     switch (lex_peek(lex)->tag) {
     case '.':                 return parse_dot(par, lhs);
@@ -666,6 +675,7 @@ static Ast *parse_expression_without_lhs (Parser *par) {
     case '[':                  return parse_array_literal_or_type(par);
     case '!':                  return parse_prefix_op(par, AST_NOT);
     case '.':                  return parse_builtin_call(par);
+    case TOKEN_TYPEOF:         return parse_typeof(par);
     case TOKEN_NIL:            return parse_nil(par);
     case TOKEN_F64_LITERAL:    return parse_float_literal(par);
     case TOKEN_FALSE:          return parse_bool_literal(par, TOKEN_FALSE);

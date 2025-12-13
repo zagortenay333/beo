@@ -15,6 +15,7 @@ istruct (Interns);
 // emits a token with tag TOKEN_##uppercase_keyword.
 #define EACH_KEYWORD(X)\
     X(Fn, FN_TYPE)\
+    X(Type, TYPEOF)\
     X(break, BREAK)\
     X(continue, CONTINUE)\
     X(defer, DEFER)\
