@@ -9,7 +9,21 @@
 // union types ala typescript
 // We don't handle the case when initializers are omitted from record literals.
 
-fn test_typeof {
+fn main {
+    {
+        type:alias Foo = Int;
+        var x: Foo = 42;
+        var y: Int = 42;
+        x = y;
+    }
+
+    {
+        type Foo = Int;
+        var x: Foo = 42;
+
+        var y = 42;
+        y = x;
+    }
 }
 
 /*

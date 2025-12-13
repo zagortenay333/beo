@@ -475,6 +475,8 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
     case AST_FN: break;
     case AST_ENUM: break;
     case AST_RECORD: break;
+    case AST_TYPE_ALIAS: break;
+    case AST_TYPE_DISTINCT: break;
 
     case AST_BLOCK: {
         U16 r = em->next_reg;

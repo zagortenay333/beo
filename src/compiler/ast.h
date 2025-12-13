@@ -332,6 +332,8 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_RECORD_LIT_INIT:  FM(F, AstRecordLitInit, val); break;\
     case AST_RETURN:           FM(F, AstReturn, result); break;\
     case AST_TUPLE:            AM(A, I, AstTuple, members); break;\
+    case AST_TYPE_ALIAS:       FM(F, AstTypeAlias, val); break;\
+    case AST_TYPE_DISTINCT:    FM(F, AstTypeDistinct, val); break;\
     case AST_VAR_DEF:          FM(F, AstVarDef, constraint); FM(F, AstVarDef, init); break;\
     case AST_WHILE:            FM(F, AstWhile, cond); AM(A, I, AstWhile, statements); break;\
     default: break;\

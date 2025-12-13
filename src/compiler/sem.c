@@ -42,6 +42,7 @@ istruct (Sem) {
     U64 error_count;
     U64 next_type_id;
     Bool found_a_sem_edge;
+    Map(TypeId, Ast*) type_def;
 
     SemCoreTypes core_types;
 
@@ -558,6 +559,13 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
 
     type->flags |= TYPE_VISITED;
 
+    if (type->flags & TYPE_IS_DISTINCT) {
+        Auto n = cast(AstTypeDistinct*, map_get_assert(&sem->type_def, type->id));
+        astr_push_fmt(astr, "%.*s", STR(*n->name));
+        type->flags &= ~TYPE_VISITED;
+        return;
+    }
+
     switch (type->tag) {
     case TYPE_TOP:    astr_push_cstr(astr, "Top"); break;
     case TYPE_BOOL:   astr_push_cstr(astr, "Bool"); break;
@@ -658,7 +666,7 @@ Void sem_print_node_out (Sem *sem, Ast *node) {
 
 static Void error_no_progress (Sem *sem) {
     array_iter (n, &sem->check_list) {
-        if (!get_type(n) && (n->tag == AST_VAR_DEF)) {
+        if (!get_type(n) && ((n->tag == AST_VAR_DEF) || (n->tag == AST_TYPE_ALIAS) || (n->tag == AST_TYPE_DISTINCT))) {
             check_for_invalid_cycle(sem, n->tag, n);
         }
     }
@@ -797,7 +805,7 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
             RETURN(match_tt(sem, underlying, t2));
         }
     }
-
+    
     default: RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
     }
 
@@ -857,6 +865,11 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
     }
 }
 
+static Type *get_underlying_from_distinct_type (Sem *sem, Type *t) {
+    Auto n = cast(AstTypeDistinct*, map_get_assert(&sem->type_def, t->id));
+    return get_type(n->val);
+}
+
 // This function can cause one of the nodes to be implicitly casted,
 // which is done by writing through the double pointer.
 //
@@ -868,11 +881,31 @@ static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype
     Ast *n1 = *pn1;
     Ast *n2 = *pn2;
 
+    repeat:
+
     if (!t1 || !t2) return RESULT_DEFER;
     if (t1 == t2)   return RESULT_OK;
     if (t1->tag == TYPE_TOP || t2->tag == TYPE_TOP) return RESULT_OK;
-    if ((t1->flags & TYPE_IS_DISTINCT) && !(n2->flags & AST_IS_LITERAL)) return ERROR_MATCH();
-    if ((t2->flags & TYPE_IS_DISTINCT) && !(n1->flags & AST_IS_LITERAL)) return ERROR_MATCH();
+
+    if (t1->flags & TYPE_IS_DISTINCT) {
+        if (! (n2->flags & AST_IS_LITERAL)) {
+            sem->match.top_pair = (MatchPair){n1,n2,t1,t2};
+            return ERROR_MATCH();
+        }
+
+        t1 = get_underlying_from_distinct_type(sem, t1);
+        goto repeat;
+    }
+
+    if (t2->flags & TYPE_IS_DISTINCT) {
+        if (! (n1->flags & AST_IS_LITERAL)) {
+            sem->match.top_pair = (MatchPair){n1,n2,t1,t2};
+            return ERROR_MATCH();
+        }
+
+        t2 = get_underlying_from_distinct_type(sem, t2);
+        goto repeat;
+    }
 
     //
     // From this point on we have to recursively match structural types.
@@ -1412,13 +1445,42 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_TYPE_ALIAS: {
+        Auto n = cast(AstTypeAlias*, node);
+        set_type(node, try_get_type_t(n->val));
+        return RESULT_OK;
+    }
+
+    case AST_TYPE_DISTINCT: {
+        AstTypeDistinct *n = cast(AstTypeDistinct*, node);
+        Type *t   = try_get_type_t(n->val);
+        Type *dt = 0;
+
+        if (t->flags & TYPE_IS_SPECIAL) {
+            return error_nt(sem, n->val, t, "expected a concrete type");
+        } else {
+            // @todo I am not sure why we are not calling alloc_type() instead
+            // of directly allocating. The only explanation might be that we
+            // don't want the type to be included in Sem.types.
+            U64 size = get_type_struct_size[t->tag];
+            dt = mem_alloc(sem->mem, Type, .align=get_type_struct_align[t->tag], .size=size);
+            memcpy(dt, t, size);
+            dt->id = sem->next_type_id++;
+        }
+
+        dt->flags |= TYPE_IS_DISTINCT;
+        map_add(&sem->type_def, dt->id, node);
+        set_type(node, dt);
+        return RESULT_OK;
+    }
+
     case AST_TYPEOF: {
         Auto n = cast(AstBaseUnary*, node);
         Type *t = try_get_type(n->op);
         set_type(node, t);
         return RESULT_OK;
     }
-                             
+
     case AST_OPTION_TYPE: {
         Auto n = cast(AstBaseUnary*, node);
         Type *t = try_get_type_t(n->op);
@@ -1657,6 +1719,7 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     array_init(&sem->check_list, mem);
 
     map_init(&sem->files, mem);
+    map_init(&sem->type_def, mem);
     map_init(&sem->global_to_reg, mem);
 
     { // Init autoimports scope:
