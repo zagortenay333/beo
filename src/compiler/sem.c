@@ -1117,23 +1117,23 @@ static Bool check_statement_returns (Sem *sem, Ast *node) {
 // for a number of other undocumented places...
 static Bool check_sequence_returns (Sem *sem, ArrayAst *seq) {
     array_iter (stmt, seq) {
-        if (check_statement_returns(sem, stmt)) {
-            if (! ARRAY_ITER_DONE) {
-                array_iter_from (stmt, seq, ARRAY_IDX+1) {
-                    switch (stmt->tag) {
-                    case AST_FN:
-                    case AST_RECORD:
-                    case AST_TYPE_ALIAS:
-                    case AST_TYPE_DISTINCT:
-                        break;
-                    default: 
-                        error_n(sem, stmt, "Unreachable code.");
-                    }
+        if (! check_statement_returns(sem, stmt)) continue;
+
+        if (! ARRAY_ITER_DONE) {
+            array_iter_from (stmt, seq, ARRAY_IDX+1) {
+                switch (stmt->tag) {
+                case AST_FN:
+                case AST_RECORD:
+                case AST_TYPE_ALIAS:
+                case AST_TYPE_DISTINCT:
+                    break;
+                default: 
+                    error_n(sem, stmt, "Unreachable code.");
                 }
             }
-
-            return true;
         }
+
+        return true;
     }
 
     return false;
