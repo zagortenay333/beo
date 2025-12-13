@@ -1,5 +1,4 @@
 // imports
-// distinct types
 // file scope
 // must_assign_result fn directive
 // unreachable code warning
@@ -19,10 +18,8 @@ fn main {
 
     {
         type Foo = Int;
-        var x: Foo = 42;
-
-        var y = 42;
-        y = x;
+        type Bar = Foo;
+        var x: Bar = 42;
     }
 }
 
@@ -31,6 +28,7 @@ fn main {
     test_var_defs();
     test_fn_calls();
     test_typeof();
+    test_type_alias_and_distinct();
     test_named_call_args();
     test_default_fn_args();
     test_some_builtins();
@@ -48,6 +46,23 @@ fn test_start (fn_name: String) {
     .print("--------------------------------------------");
     .print(fn_name);
     .print("--------------------------------------------");
+}
+
+fn test_type_alias_and_distinct {
+    test_start(.fn_name());
+
+    {
+        type:alias Foo = Int;
+        var x: Foo = 42;
+        var y: Int = 42;
+        x = y;
+    }
+
+    {
+        type Foo = Int;
+        type Bar = Foo;
+        var x: Bar = 42;
+    }
 }
 
 fn test_typeof {
