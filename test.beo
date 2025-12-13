@@ -1,5 +1,7 @@
+// @todo
 // imports
 // file scope
+// The VmCFunction return value should be checked. The vm should abort if it's an error.
 // We don't handle the case when initializers are omitted from record literals.
 
 fn main {
