@@ -65,6 +65,7 @@ static Result match_nc (Sem *sem, Ast *n, Ast *c);
 static Result match_tt (Sem *sem, Type *t1, Type *t2);
 static Result match_tv (Sem *sem, Type *t, Ast **v);
 static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2);
+static Bool check_sequence_returns (Sem *sem, ArrayAst *seq);
 static Void set_const_val (Sem *sem, Ast *node, VmReg reg);
 static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope);
 static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node);
@@ -1098,6 +1099,53 @@ static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *cal
     return RESULT_OK;
 }
 
+static Bool check_statement_returns (Sem *sem, Ast *node) {
+    switch (node->tag) {
+    case AST_RETURN: return true;
+    case AST_BLOCK:  return check_sequence_returns(sem, &cast(AstBlock*, node)->statements);
+    case AST_IF: {
+        Auto n = cast(AstIf*, node);
+        if (! n->else_arm) return false;
+        return check_statement_returns(sem, n->then_arm) && check_statement_returns(sem, n->else_arm);
+    }
+    default: return false;
+    } 
+}
+
+// @todo If we later add codegen, this function will have to be 
+// updated to iterate a bit more carefully. The same is true 
+// for a number of other undocumented places...
+static Bool check_sequence_returns (Sem *sem, ArrayAst *seq) {
+    array_iter (stmt, seq) {
+        if (check_statement_returns(sem, stmt)) {
+            if (! ARRAY_ITER_DONE) {
+                array_iter_from (stmt, seq, ARRAY_IDX+1) {
+                    switch (stmt->tag) {
+                    case AST_FN:
+                    case AST_RECORD:
+                    case AST_TYPE_ALIAS:
+                    case AST_TYPE_DISTINCT:
+                        break;
+                    default: 
+                        error_n(sem, stmt, "Unreachable code.");
+                    }
+                }
+            }
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static Void check_fn_return_paths (Sem *sem, AstFn *fn) {
+    if (! check_sequence_returns(sem, &fn->statements)) {
+        error_n(sem, cast(Ast*, fn), "Not all control paths return.");
+        sem_panic(sem);
+    }
+}
+
 // This function performs a shallow check of @node without
 // recursing down the tree; therefore, a node can be marked
 // checked even if some node reachable from it is not.
@@ -1679,6 +1727,10 @@ static Void check_nodes (Sem *sem) {
     }
 
     if (sem->check_list.count) error_no_progress(sem);
+
+    array_iter (fn, &sem->fns) {
+        if (cast(AstBaseFn*, fn)->output) check_fn_return_paths(sem, fn);
+    }
 }
 
 SemProgram *sem_check (Sem *sem, String main_file_path) {

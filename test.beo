@@ -1,11 +1,7 @@
 // imports
 // file scope
-// must_assign_result fn directive
-// unreachable code warning
 // assert builtin
 // raising an error that is caught by setjmp on the c side
-// len builtin
-// union types ala typescript
 // We don't handle the case when initializers are omitted from record literals.
 
 fn main {
