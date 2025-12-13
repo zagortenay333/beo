@@ -29,6 +29,7 @@ istruct (Interns);
     X(record, RECORD)\
     X(return, RETURN)\
     X(true, TRUE)\
+    X(type, TYPE)\
     X(var, VAR)\
     X(while, WHILE)
 
@@ -102,6 +103,12 @@ istruct (Interns);
     X(print)\
     X(stack_trace)\
     X(val)
+
+// These tokens act as pseudo keywords in the sense that
+// the lexer will emit a TOKEN_IDENT for each of these,
+// but in certain contexts they have special meaning.
+#define EACH_ATTRIBUTE(X)\
+    X(alias)
 
 fenum (TokenTag, U64) {
     #define X(VAL, TAG, ...) TAG = VAL,

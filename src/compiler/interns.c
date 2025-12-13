@@ -24,7 +24,6 @@ Interns *interns_new (Mem *mem, String main_file_path) {
     interns->mem = mem;
     map_init(&interns->map, mem);
 
-    interns->main_file_path = intern_str(interns, main_file_path);
     interns->file_extension = intern_cstr(interns, ".beo");
     interns->entry_fn_name  = intern_cstr(interns, "main");
 
@@ -34,6 +33,10 @@ Interns *interns_new (Mem *mem, String main_file_path) {
 
     #define X(N) interns->builtin_##N = intern_cstr(interns, #N);
         EACH_BUILTIN(X)
+    #undef X
+
+    #define X(N) interns->attr_##N = intern_cstr(interns, #N);
+        EACH_ATTRIBUTE(X)
     #undef X
 
     return interns;

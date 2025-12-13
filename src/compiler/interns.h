@@ -11,7 +11,6 @@ istruct (Interns) {
 
     IString *entry_fn_name;
     IString *file_extension;
-    IString *main_file_path;
 
     #define X(_, K) IString *K;
         EACH_KEYWORD(X)
@@ -19,6 +18,10 @@ istruct (Interns) {
 
     #define X(N) IString *builtin_##N;
         EACH_BUILTIN(X)
+    #undef X
+
+    #define X(N) IString *attr_##N;
+        EACH_ATTRIBUTE(X)
     #undef X
 };
 

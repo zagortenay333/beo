@@ -80,6 +80,8 @@ istruct (Interns);
     X(AST_SUB, AstSub, AST_BASE_BINARY, 0)\
     X(AST_TUPLE, AstTuple, 0, 0)\
     X(AST_TYPEOF, AstTypeof, AST_BASE_UNARY, AST_IS_TYPE)\
+    X(AST_TYPE_ALIAS, AstTypeAlias, 0, AST_IS_TYPE)\
+    X(AST_TYPE_DISTINCT, AstTypeDistinct, 0, AST_IS_TYPE)\
     X(AST_VAR_DEF, AstVarDef, 0, AST_IS_LVALUE)\
     X(AST_WHILE, AstWhile, 0, AST_CREATES_SCOPE)
 
@@ -93,6 +95,8 @@ istruct (Interns);
     X(AST_ENUM_FIELD, AstEnumField)\
     X(AST_FN, AstFn)\
     X(AST_RECORD, AstRecord)\
+    X(AST_TYPE_ALIAS, AstTypeAlias)\
+    X(AST_TYPE_DISTINCT, AstTypeDistinct)\
     X(AST_VAR_DEF, AstVarDef)
 
 // X(AstTag, type, description)
@@ -221,6 +225,8 @@ istruct (AstReturn)            { Ast base; Ast *result, *sem_edge; };
 istruct (AstStringLiteral)     { Ast base; IString *str; };
 istruct (AstSub)               { AstBaseBinary base; };
 istruct (AstTuple)             { Ast base; ArrayAst members; };
+istruct (AstTypeAlias)         { Ast base; IString *name; Ast *val; };
+istruct (AstTypeDistinct)      { Ast base; IString *name; Ast *val; };
 istruct (AstTypeof)            { AstBaseUnary base; };
 istruct (AstVarDef)            { Ast base; IString *name; Ast *constraint, *init; };
 istruct (AstWhile)             { Ast base; IString *label; Ast *cond; ArrayAst statements; };

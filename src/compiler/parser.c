@@ -875,6 +875,28 @@ static Ast *parse_defer (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_type_alias (Parser *par) {
+    Auto node = make_node(par, AstTypeAlias);
+    lex_eat_this(lex, TOKEN_TYPE);
+    parse_attributes(cast(Ast*, node)->id, eat_attribute(alias));
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '=');
+    node->val = parse_expression(par, 0);
+    lex_eat_this(lex, ';');
+    return complete_node(par, node);
+}
+
+static Ast *parse_type_distinct (Parser *par) {
+    Auto node = make_node(par, AstTypeDistinct);
+    lex_eat_this(lex, TOKEN_TYPE);
+    try_parse_attributes(cast(Ast*, node)->id,);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '=');
+    node->val = parse_expression(par, 0);
+    lex_eat_this(lex, ';');
+    return complete_node(par, node);
+}
+
 static Ast *parse_statement (Parser *par) {
     Ast *result = 0;
 
@@ -892,6 +914,7 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_RECORD:   result = parse_record(par); break;
     case TOKEN_VAR:      result = parse_var_def(par, true, true); result->flags |= AST_IS_LOCAL_VAR; break;
     case TOKEN_WHILE:    result = parse_while(par); break;
+    case TOKEN_TYPE:     result = starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
     case TOKEN_IF:       result = parse_if(par); break;
     default: {
         Ast *n = try_parse_expression(par, 0);
@@ -920,6 +943,7 @@ static Ast *parse_top_statement (Parser *par) {
     case TOKEN_ENUM:   return parse_enum(par); break;
     case TOKEN_RECORD: return parse_record(par); break;
     case TOKEN_FN:     return parse_fn(par); break;
+    case TOKEN_TYPE:   return starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
     case TOKEN_VAR: {
        Ast *result = parse_var_def(par, true, true);
        result->flags |= AST_IS_GLOBAL_VAR;
