@@ -1139,13 +1139,6 @@ static Bool check_sequence_returns (Sem *sem, ArrayAst *seq) {
     return false;
 }
 
-static Void check_fn_return_paths (Sem *sem, AstFn *fn) {
-    if (! check_sequence_returns(sem, &fn->statements)) {
-        error_n(sem, cast(Ast*, fn), "Not all control paths return.");
-        sem_panic(sem);
-    }
-}
-
 // This function performs a shallow check of @node without
 // recursing down the tree; therefore, a node can be marked
 // checked even if some node reachable from it is not.
@@ -1729,7 +1722,12 @@ static Void check_nodes (Sem *sem) {
     if (sem->check_list.count) error_no_progress(sem);
 
     array_iter (fn, &sem->fns) {
-        if (cast(AstBaseFn*, fn)->output) check_fn_return_paths(sem, fn);
+        if (! cast(AstBaseFn*, fn)->output) continue;
+
+        if (! check_sequence_returns(sem, &fn->statements)) {
+            error_n(sem, cast(Ast*, fn), "Not all control paths return.");
+            sem_panic(sem);
+        }
     }
 }
 
