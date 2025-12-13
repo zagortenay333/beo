@@ -1,7 +1,6 @@
 // imports
 // distinct types
 // file scope
-// labeled break/continue
 // typeof
 // must_assign_result fn directive
 // unreachable code warning
@@ -12,10 +11,6 @@
 // We don't handle the case when initializers are omitted from record literals.
 
 fn main {
-    while:outer 1 < 2 {
-        while:inner 1 < 2 {
-        }
-    }
 }
 
 /*
@@ -233,10 +228,17 @@ fn test_ifs {
 
 fn test_while {
     test_start(.fn_name());
+
     var i = 0;
     while i < 10 {
         .print("while");
         i += 1;
+    }
+
+    while:outer true {
+        while:inner true {
+            break outer;
+        }
     }
 }
 

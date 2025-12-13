@@ -190,21 +190,21 @@ static Result can_eval_ (Sem *sem, Ast *node, Bool allow_local_var) {
         return R;\
     }
 
-    #define CAN_EVAL(child, ...) try(can_eval_(sem, child, allow_local_var), RETURN(R));\
+    #define V(child, ...) try(can_eval_(sem, child, allow_local_var), RETURN(R));\
 
-    AST_VISIT_CHILDREN(node, CAN_EVAL);
+    AST_VISIT_CHILDREN(node, V);
 
     Ast *d = get_target(node);
     if (d) {
         if ((d->flags & AST_IS_LOCAL_VAR) && !allow_local_var) RETURN(error_nn(sem, node, d, "Cannot compile-time eval local variable."));
-        CAN_EVAL(d);
+        V(d);
     }
 
     node->flags |= AST_CAN_EVAL;
     RETURN(RESULT_OK);
 
+    #undef V
     #undef RETURN
-    #undef CAN_EVAL
 }
 
 static Result can_eval (Sem *sem, Ast *node) {
@@ -282,15 +282,15 @@ static Void collect_program_ (SemProgram *prog, Ast *node) {
         array_push(&prog->types, t);
     }
 
-    #define C(child, ...) collect_program_(prog, child)
+    #define V(child, ...) collect_program_(prog, child)
 
-    AST_VISIT_CHILDREN(node, C);
+    AST_VISIT_CHILDREN(node, V);
 
     Ast *d = get_target(node);
-    if (d) C(d);
+    if (d) V(d);
 
     node->flags &= ~AST_VISITED;
-    #undef C
+    #undef V
 }
 
 static SemProgram *collect_program (Sem *sem, Ast *node, Mem *mem) {
@@ -933,8 +933,9 @@ static Void check_for_invalid_cycle_ (Sem *sem, AstTag tag, Ast *node, ArrayAst 
         Ast *d = get_target(node);
         if (d && !get_type(d) && (d->tag == tag)) check_for_invalid_cycle_(sem, tag, d, path);
 
-        #define CHECK_FOR_INVALID_CYCLE(child, ...) check_for_invalid_cycle_(sem, tag, child, path);
-        AST_VISIT_CHILDREN(node, CHECK_FOR_INVALID_CYCLE);
+        #define V(child, ...) check_for_invalid_cycle_(sem, tag, child, path);
+        AST_VISIT_CHILDREN(node, V);
+        #undef V
 
         if (node->tag == tag || node->tag == AST_IDENT) path->count--;
     } else {
@@ -1451,10 +1452,19 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_BREAK:
     case AST_CONTINUE: {
-        Scope *scope = sem_scope_get_ancestor(get_scope(node), AST_WHILE);
-        if (! scope) return error_n(sem, node, "A '%s' can only appear inside a while loop.", node->tag == AST_CONTINUE ? "continue" : "break");
-        sem_set_target(sem, node, scope->owner);
-        return RESULT_OK;
+        IString *label = (node->tag == AST_BREAK) ? cast(AstBreak*, node)->label : cast(AstContinue*, node)->label;
+
+        for (Scope *s = node->sem_scope; s; s = s->parent) {
+            if (s->owner->tag == AST_WHILE) {
+                IString *l = cast(AstWhile*, s->owner)->label;
+                if (!label || (label == l)) {
+                    sem_set_target(sem, node, s->owner);
+                    return RESULT_OK;
+                }
+            }
+        }
+
+        return error_n(sem, node, "Could not find corresponding while loop for %s'.", (node->tag == AST_BREAK) ? "break" : "continue");
     }
 
     case AST_ASSIGN: {
@@ -1565,8 +1575,9 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
     if (n->flags & AST_CREATES_SCOPE) scope = scope_new(sem, scope, n);
     if ((n->flags & AST_MUST_EVAL) && !(n->flags & AST_EVALED)) array_push(&sem->eval_list, n);
 
-    #define ADD_TO_CHECK_LIST(child, ...) add_to_check_list(sem, child, scope);
-    AST_VISIT_CHILDREN(n, ADD_TO_CHECK_LIST);
+    #define V(child, ...) add_to_check_list(sem, child, scope);
+    AST_VISIT_CHILDREN(n, V);
+    #undef V
 
     if ((n->flags & AST_CREATES_SCOPE)) scope_seal(sem, scope);
     array_push(&sem->check_list, n);
