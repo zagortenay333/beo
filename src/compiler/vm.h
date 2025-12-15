@@ -9,6 +9,7 @@
 istruct (Sem);
 istruct (SemProgram);
 istruct (AstFn);
+istruct (Ast);
 istruct (Vm);
 istruct (VmObj);
 
@@ -136,6 +137,8 @@ istruct (Vm) {
     ArrayVmObj gc_objects;
     Array(struct { String name; VmObjRecord *obj; }) ffi;
 
+    Array(Ast*) debug_info; // Index with pc.
+
     ArrayVmReg registers;
     Array(CallRecord) call_stack;
 };
@@ -145,7 +148,7 @@ Void  vm_destroy           (Vm *);
 Void  vm_set_prog          (Vm *, SemProgram *);
 Void  vm_set_prog_from_str (Vm *, String);
 VmReg vm_transfer_result   (Vm *, Vm *);
-Void  vm_print             (Vm *);
+Void  vm_print             (Vm *, Bool);
 Void  vm_run               (Vm *);
 Void  vm_ffi_new           (Vm *, String);
 Void  vm_ffi_add           (Vm *, String, String, VmCFunction);

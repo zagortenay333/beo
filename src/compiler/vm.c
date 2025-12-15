@@ -23,6 +23,7 @@ istruct (Emitter) {
     Vm *vm;
     U16 next_reg;
     AstFn *fn;
+    Ast *debug_node;
     Map(AstId, VmRegOp) binds;
     Array(Defer) defers;
     Array(BreakPatch) break_patches;
@@ -148,11 +149,22 @@ static U32 get_global_from_ast (Vm *vm, Ast *ast) {
     badpath;
 }
 
+static Void record_debug_info (Emitter *em) {
+    array_ensure_count(&em->vm->debug_info, em->vm->instructions.count + 1, true);
+    array_set(&em->vm->debug_info, em->vm->instructions.count, em->debug_node);
+}
+
+#define emit_bytes(EM, ...) ({\
+    def1(em, EM);\
+    record_debug_info(em);\
+    array_push_n(&em->vm->instructions, __VA_ARGS__);\
+})
+
 static Void emit_const (Emitter *em, VmRegOp result, VmReg val) {
     U32 idx = em->vm->constants.count;
     assert_always(idx < UINT32_MAX); // @todo Better error message.
     array_push(&em->vm->constants, val);
-    array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result, ENCODE_U32(idx));
+    emit_bytes(em, VM_OP_CONST_GET, result, ENCODE_U32(idx));
 }
 
 // @todo We need to deduplicate strings...
@@ -170,17 +182,17 @@ static Void emit_binary_op (Emitter *em, Ast *expr, VmOp op, VmRegOp result) {
     Auto n = cast(AstBaseBinary*, expr);
     VmRegOp arg1 = emit_expression(em, n->op1, -1);
     VmRegOp arg2 = emit_expression(em, n->op2, -1);
-    array_push_n(&em->vm->instructions, op, result, arg1, arg2);
+    emit_bytes(em, op, result, arg1, arg2);
 }
 
 static Void emit_unary_op (Emitter *em, Ast *expr, VmOp op, VmRegOp result) {
     Auto n = cast(AstBaseUnary*, expr);
     VmRegOp arg = emit_expression(em, n->op, -1);
-    array_push_n(&em->vm->instructions, op, result, arg);
+    emit_bytes(em, op, result, arg);
 }
 
 static Void emit_move (Emitter *em, VmRegOp to, VmRegOp from) {
-    array_push_n(&em->vm->instructions, VM_OP_MOVE, to, from);
+    emit_bytes(em, VM_OP_MOVE, to, from);
 }
 
 // This function is used for emitting defers right before
@@ -212,16 +224,17 @@ static Void emit_sequence (Emitter *em, Ast *scope_owner, ArrayAst *statements) 
 // should be allocated.
 static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     assert_dbg((pref == -1) || (pref >= 0 && pref <= UINT8_MAX));
-
     VmRegOp result_reg = (pref == -1) ? reg_push(em) : pref;
 
-    switch (expr->tag) {
-    case AST_ADD: emit_binary_op(em, expr, VM_OP_ADD, result_reg); break;
-    case AST_DIV: emit_binary_op(em, expr, VM_OP_DIV, result_reg); break;
-    case AST_MOD: emit_binary_op(em, expr, VM_OP_MOD, result_reg); break;
-    case AST_MUL: emit_binary_op(em, expr, VM_OP_MUL, result_reg); break;
-    case AST_SUB: emit_binary_op(em, expr, VM_OP_SUB, result_reg); break;
+    Ast *prev_debug_node = em->debug_node;
+    em->debug_node = expr;
 
+    switch (expr->tag) {
+    case AST_ADD:           emit_binary_op(em, expr, VM_OP_ADD, result_reg); break;
+    case AST_DIV:           emit_binary_op(em, expr, VM_OP_DIV, result_reg); break;
+    case AST_MOD:           emit_binary_op(em, expr, VM_OP_MOD, result_reg); break;
+    case AST_MUL:           emit_binary_op(em, expr, VM_OP_MUL, result_reg); break;
+    case AST_SUB:           emit_binary_op(em, expr, VM_OP_SUB, result_reg); break;
     case AST_EQUAL:         emit_binary_op(em, expr, VM_OP_EQUAL, result_reg); break;
     case AST_NOT_EQUAL:     emit_binary_op(em, expr, VM_OP_NOT_EQUAL, result_reg); break;
     case AST_LESS:          emit_binary_op(em, expr, VM_OP_LESS, result_reg); break;
@@ -264,11 +277,11 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     case AST_ARRAY_LITERAL: {
         Auto n = cast(AstArrayLiteral*, expr);
 
-        array_push_n(&em->vm->instructions, VM_OP_ARRAY_NEW, result_reg);
+        emit_bytes(em, VM_OP_ARRAY_NEW, result_reg);
 
         array_iter (init, &n->inits) {
             VmRegOp init_reg = emit_expression(em, init, -1);
-            array_push_n(&em->vm->instructions, VM_OP_ARRAY_PUSH, result_reg, init_reg);
+            emit_bytes(em, VM_OP_ARRAY_PUSH, result_reg, init_reg);
             reg_pop(em);
         }
     } break;
@@ -276,7 +289,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     case AST_RECORD_LITERAL: {
         Auto n = cast(AstRecordLiteral*, expr);
 
-        array_push_n(&em->vm->instructions, VM_OP_RECORD_NEW, result_reg);
+        emit_bytes(em, VM_OP_RECORD_NEW, result_reg);
 
         array_iter (init, &n->inits) {
             VmRegOp init_reg = emit_expression(em, init->val, -1);
@@ -284,7 +297,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             VmRegOp key_reg = reg_push(em);
             emit_const_string(em, *init->name, key_reg);
 
-            array_push_n(&em->vm->instructions, VM_OP_RECORD_SET, result_reg, key_reg, init_reg);
+            emit_bytes(em, VM_OP_RECORD_SET, result_reg, key_reg, init_reg);
 
             reg_pop(em);
             reg_pop(em);
@@ -296,11 +309,11 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         assert_dbg(! (expr->flags & AST_IS_TYPE));
 
-        array_push_n(&em->vm->instructions, VM_OP_ARRAY_NEW, result_reg);
+        emit_bytes(em, VM_OP_ARRAY_NEW, result_reg);
 
         array_iter (m, &n->members) {
             VmRegOp init_reg = emit_expression(em, m, -1);
-            array_push_n(&em->vm->instructions, VM_OP_ARRAY_PUSH, result_reg, init_reg);
+            emit_bytes(em, VM_OP_ARRAY_PUSH, result_reg, init_reg);
             reg_pop(em);
         }
     } break;
@@ -312,12 +325,12 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         if (sem_get_type(sem, n->lhs)->tag == TYPE_ARRAY) {
             VmRegOp idx_reg = emit_expression(em, n->idx, -1);
-            array_push_n(&em->vm->instructions, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
+            emit_bytes(em, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
         } else {
             assert_dbg(sem_get_type(sem, n->lhs)->tag == TYPE_TUPLE);
             VmRegOp idx_reg = reg_push(em);
             emit_const(em, idx_reg, sem_get_const_val(sem, n->idx));
-            array_push_n(&em->vm->instructions, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
+            emit_bytes(em, VM_OP_ARRAY_GET, arr_reg, idx_reg, result_reg);
         }
 
         reg_pop(em);
@@ -332,7 +345,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         if (t->tag == TYPE_RECORD) {
             VmRegOp rec_reg = emit_expression(em, n->lhs, -1);
             VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
-            array_push_n(&em->vm->instructions, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
+            emit_bytes(em, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
             reg_pop(em);
             reg_pop(em);
         } else if (t->tag == TYPE_ENUM) {
@@ -357,9 +370,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         if (sem_get_type(em->vm->sem, n->lhs) == core_types->type_CFn) {
             assert_always(n->args.count <= 254);
-            array_push_n(&em->vm->instructions, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, n->args.count));
+            emit_bytes(em, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, n->args.count));
         } else {
-            array_push_n(&em->vm->instructions, VM_OP_CALL, fn_reg);
+            emit_bytes(em, VM_OP_CALL, fn_reg);
         }
 
         if (needs_result_move) {
@@ -369,12 +382,12 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             em->next_reg = result + 1;
         }
 
-        return result;
-    }
+        result_reg = result;
+    } break;
 
     case AST_FN: {
         U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, expr));
-        array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
+        emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
     } break;
 
     case AST_CALL_DEFAULT_ARG: {
@@ -389,20 +402,20 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         if (def->tag == AST_FN) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
-            array_push_n(&em->vm->instructions, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
+            emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
         } else if (def->flags & AST_IS_LOCAL_VAR) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
             assert_always(found);
 
             if (pref == -1) {
                 em->next_reg = result_reg;
-                return reg;
+                result_reg = reg;
             } else {
                 emit_move(em, result_reg, reg);
             }
         } else if (def->flags & AST_IS_GLOBAL_VAR) {
             I64 global_idx = get_global_from_ast(em->vm, def);
-            array_push_n(&em->vm->instructions, VM_OP_GLOBAL_GET, result_reg, ENCODE_U32(global_idx));
+            emit_bytes(em, VM_OP_GLOBAL_GET, result_reg, ENCODE_U32(global_idx));
         } else {
             badpath;
         }
@@ -411,7 +424,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     case AST_BUILTIN_PRINT: {
         Auto n = cast(AstBaseUnary*, expr);
         VmRegOp result_reg = emit_expression(em, n->op, -1);
-        array_push_n(&em->vm->instructions, VM_OP_PRINT, result_reg);
+        emit_bytes(em, VM_OP_PRINT, result_reg);
     } break;
 
     case AST_BUILTIN_FN_NAME: {
@@ -439,13 +452,13 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     } break;
 
     case AST_BUILTIN_STACK_TRACE: {
-        array_push_n(&em->vm->instructions, VM_OP_STACK_TRACE, result_reg);
+        emit_bytes(em, VM_OP_STACK_TRACE, result_reg);
     } break;
 
     case AST_BUILTIN_IS_NIL: {
         Auto n = cast(AstBaseUnary*, expr);
         emit_expression(em, n->op, result_reg);
-        array_push_n(&em->vm->instructions, VM_OP_IS_NIL, result_reg, result_reg);
+        emit_bytes(em, VM_OP_IS_NIL, result_reg, result_reg);
     } break;
 
     case AST_LOGICAL_AND:
@@ -454,9 +467,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         emit_expression(em, n->op1, result_reg);
 
-        array_push(&em->vm->instructions, (expr->tag == AST_LOGICAL_AND) ? VM_OP_JUMP_IF_FALSE : VM_OP_JUMP_IF_TRUE);
+        emit_bytes(em, (expr->tag == AST_LOGICAL_AND) ? VM_OP_JUMP_IF_FALSE : VM_OP_JUMP_IF_TRUE);
         U32 patch_jump = get_bytecode_pos(em);
-        array_push_n(&em->vm->instructions, 0, 0, 0, 0, result_reg);
+        emit_bytes(em, 0, 0, 0, 0, result_reg);
 
         emit_expression(em, n->op2, result_reg);
 
@@ -467,10 +480,15 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     }
 
     if (pref == -1) em->next_reg = result_reg + 1;
+    em->debug_node = prev_debug_node;
+
     return result_reg;
 }
 
 static Void emit_statement (Emitter *em, Ast *stmt) {
+    Ast *prev_debug_node = em->debug_node;
+    em->debug_node = stmt;
+
     switch (stmt->tag) {
     case AST_FN: break;
     case AST_ENUM: break;
@@ -512,7 +530,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
             if (def->flags & AST_IS_GLOBAL_VAR) {
                 VmRegOp val_reg = emit_rhs(-1);
                 U32 global_idx  = get_global_from_ast(em->vm, def);
-                array_push_n(&em->vm->instructions, VM_OP_GLOBAL_SET, val_reg, ENCODE_U32(global_idx));
+                emit_bytes(em, VM_OP_GLOBAL_SET, val_reg, ENCODE_U32(global_idx));
             } else {
                 VmRegOp result_reg;
                 Bool found = map_get(&em->binds, def->id, &result_reg);
@@ -524,14 +542,14 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
             VmRegOp arr_reg = emit_expression(em, lhs->lhs, -1);
             VmRegOp idx_reg = emit_expression(em, lhs->idx, -1);
             VmRegOp val_reg = emit_rhs(-1);
-            array_push_n(&em->vm->instructions, VM_OP_ARRAY_SET, arr_reg, idx_reg, val_reg);
+            emit_bytes(em, VM_OP_ARRAY_SET, arr_reg, idx_reg, val_reg);
             reg_pop(em);
         } else if (n->op1->tag == AST_DOT) {
             Auto lhs = cast(AstDot*, n->op1);
             VmRegOp rec_reg = emit_expression(em, lhs->lhs, -1);
             VmRegOp key_reg = emit_const_string(em, *lhs->rhs, reg_push(em));
             VmRegOp val_reg = emit_rhs(-1);
-            array_push_n(&em->vm->instructions, VM_OP_RECORD_SET, rec_reg, key_reg, val_reg);
+            emit_bytes(em, VM_OP_RECORD_SET, rec_reg, key_reg, val_reg);
             reg_pop(em);
         } else {
             badpath;
@@ -544,7 +562,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         Auto n = cast(AstReturn*, stmt);
         if (n->result) emit_expression(em, n->result, 0);
         emit_defers(em, n->sem_edge);
-        array_push(&em->vm->instructions, VM_OP_RETURN);
+        emit_bytes(em, VM_OP_RETURN);
     } break;
 
     case AST_IF: {
@@ -552,17 +570,17 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
 
         VmRegOp cond = emit_expression(em, n->cond, -1);
 
-        array_push(&em->vm->instructions, VM_OP_JUMP_IF_FALSE);
+        emit_bytes(em, VM_OP_JUMP_IF_FALSE);
         U32 patch_if_jump = get_bytecode_pos(em);
-        array_push_n(&em->vm->instructions, 0, 0, 0, 0, cond);
+        emit_bytes(em, 0, 0, 0, 0, cond);
 
         emit_statement(em, n->then_arm);
 
         U32 patch_else_jump = UINT32_MAX;
         if (n->else_arm) {
-            array_push(&em->vm->instructions, VM_OP_JUMP);
+            emit_bytes(em, VM_OP_JUMP);
             patch_else_jump = get_bytecode_pos(em);
-            array_push_n(&em->vm->instructions, 0, 0, 0, 0);
+            emit_bytes(em, 0, 0, 0, 0);
         }
 
         patch_u32(em, patch_if_jump, get_bytecode_pos(em));
@@ -581,13 +599,13 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
 
         VmRegOp cond = emit_expression(em, n->cond, -1);
 
-        array_push(&em->vm->instructions, VM_OP_JUMP_IF_FALSE);
+        emit_bytes(em, VM_OP_JUMP_IF_FALSE);
         U32 patch_jump = get_bytecode_pos(em);
-        array_push_n(&em->vm->instructions, 0, 0, 0, 0, cond);
+        emit_bytes(em, 0, 0, 0, 0, cond);
 
         emit_sequence(em, stmt, &n->statements);
 
-        array_push_n(&em->vm->instructions, VM_OP_JUMP, ENCODE_U32(continue_block));
+        emit_bytes(em, VM_OP_JUMP, ENCODE_U32(continue_block));
 
         U32 break_block = get_bytecode_pos(em);
         patch_u32(em, patch_jump, break_block);
@@ -604,15 +622,15 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         Auto n = cast(AstContinue*, stmt);
         emit_defers(em, n->sem_edge);
         ContinuePatch *patch = array_find_ref(&em->continue_patches, IT->while_loop == n->sem_edge);
-        array_push_n(&em->vm->instructions, VM_OP_JUMP, ENCODE_U32(patch->continue_block));
+        emit_bytes(em, VM_OP_JUMP, ENCODE_U32(patch->continue_block));
     } break;
 
     case AST_BREAK: {
         Auto n = cast(AstBreak*, stmt);
         emit_defers(em, n->sem_edge);
-        array_push(&em->vm->instructions, VM_OP_JUMP);
+        emit_bytes(em, VM_OP_JUMP);
         U32 patch = get_bytecode_pos(em);
-        array_push_n(&em->vm->instructions, 0, 0, 0, 0);
+        emit_bytes(em, 0, 0, 0, 0);
         array_push(&em->break_patches, ((BreakPatch){ n->sem_edge, patch }));
     } break;
 
@@ -623,21 +641,18 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
         array_iter_back (d, &em->defers, *) {
             if (d->scope_owner == t) {
                 array_insert_lit(&em->defers, ARRAY_IDX + 1, .statement=n->stmt, .scope_owner=t);
-                return;
+                break;
             }
         }
-
-        // We know we can't get here because the emit_sequence()
-        // function will insert a sentinel value will cause the
-        // above loop to hit the if statement;
-        badpath;
-    }
+    } break;
 
     default: {
         emit_expression(em, stmt, -1);
         reg_pop(em);
     } break;
     }
+
+    em->debug_node = prev_debug_node;
 }
 
 static Void emit_fn_bytecode (Vm *vm, AstFn *ast) {
@@ -708,7 +723,7 @@ Void vm_set_prog_from_str (Vm *vm, String main_file_path) {
     vm_set_prog(vm, prog);
 }
 
-Void vm_print (Vm *vm) {
+Void vm_print (Vm *vm, Bool show_source) {
     #define print_binary_op(OP) ({\
         VmRegOp result_reg = cur[1];\
         VmRegOp arg1 = cur[2];\
@@ -736,7 +751,8 @@ Void vm_print (Vm *vm) {
         U8 *end = array_ref(&vm->instructions, fn->last_instruction - 1);
 
         while (cur < end) {
-            printf("    %lu: ", cur - beg);
+            U32 pc = cur - beg;
+            printf("    %u: ", pc);
 
             switch (cast(VmOp, *cur)) {
             case VM_OP_ADD:           print_binary_op("+"); break;
@@ -791,6 +807,12 @@ Void vm_print (Vm *vm) {
                 printf("r%i = ", result_reg);
                 print_reg(vm, val, false, true);
             } break;
+            }
+
+            if (show_source) {
+                Ast *info = array_get(&vm->debug_info, pc);
+                printf("\n");
+                sem_print_node_out(vm->sem->sem, info);
             }
         }
     }
@@ -938,7 +960,12 @@ static VmObj *gc_new_record (Vm *vm) {
 
 static String stack_trace (Vm *vm, Mem *mem) {
     AString astr = astr_new(mem);
-    array_iter_back (cr, &vm->call_stack, *) astr_push_fmt(&astr, "    fn<%.*s> pc=%u\n", STR(*cr->fn->ast->name), cr->pc);
+
+    array_iter_back (cr, &vm->call_stack, *) {
+        Ast *info = array_get(&vm->debug_info, cr->pc);
+        sem_print_node_out(vm->sem->sem, info);
+    }
+
     return astr_to_str(&astr);
 }
 
@@ -948,7 +975,6 @@ static Void run_loop (Vm *vm) {
     assert_dbg(vm->call_stack.count);
 
     #define run_binop(OP) ({\
-        cr->pc += 4;\
         VmReg *out  = get_reg(vm, cr, pc[1]);\
         VmReg *arg1 = get_reg(vm, cr, pc[2]);\
         VmReg *arg2 = get_reg(vm, cr, pc[3]);\
@@ -961,10 +987,10 @@ static Void run_loop (Vm *vm) {
         case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 OP arg2->f64; break;\
         }\
+        cr->pc += 4;\
     })
 
     #define run_compare(OP) ({\
-        cr->pc += 4;\
         VmReg *out  = get_reg(vm, cr, pc[1]);\
         VmReg *arg1 = get_reg(vm, cr, pc[2]);\
         VmReg *arg2 = get_reg(vm, cr, pc[3]);\
@@ -977,6 +1003,7 @@ static Void run_loop (Vm *vm) {
         case VM_REG_INT:   out->tag = VM_REG_BOOL; out->boolean = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_BOOL; out->boolean = arg1->f64 OP arg2->f64; break;\
         }\
+        cr->pc += 4;\
     })
 
     CallRecord *cr = array_ref_last(&vm->call_stack);
@@ -1000,8 +1027,6 @@ static Void run_loop (Vm *vm) {
         case VM_OP_LESS:          run_compare(<); break;
 
         case VM_OP_MOD: {
-            cr->pc += 4;
-
             VmReg *out  = get_reg(vm, cr, pc[1]);
             VmReg *arg1 = get_reg(vm, cr, pc[2]);
             VmReg *arg2 = get_reg(vm, cr, pc[3]);
@@ -1015,11 +1040,11 @@ static Void run_loop (Vm *vm) {
             case VM_REG_CFN:   badpath;
             case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = arg1->i64 % arg2->i64; break;
             }
+
+            cr->pc += 4;
         } break;
 
         case VM_OP_NEGATE: {
-            cr->pc += 3;
-
             VmReg *out = get_reg(vm, cr, pc[1]);
             VmReg *arg = get_reg(vm, cr, pc[2]);
 
@@ -1032,29 +1057,29 @@ static Void run_loop (Vm *vm) {
             case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = -arg->i64; break;
             case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = -arg->f64; break;
             }
+
+            cr->pc += 3;
         } break;
 
         case VM_OP_NOT: {
-            cr->pc += 3;
-
             VmReg *out = get_reg(vm, cr, pc[1]);
             VmReg *arg = get_reg(vm, cr, pc[2]);
 
             assert_always(arg->tag == VM_REG_BOOL);
             out->boolean = !arg->boolean;
             out->tag = VM_REG_BOOL;
+
+            cr->pc += 3;
         } break;
 
         case VM_OP_ARRAY_NEW: {
-            cr->pc += 2;
             VmReg *arr_reg = get_reg(vm, cr, pc[1]);
             arr_reg->obj = gc_new_array(vm);
             arr_reg->tag = VM_REG_OBJ;
+            cr->pc += 2;
         } break;
 
         case VM_OP_ARRAY_GET: {
-            cr->pc += 4;
-
             VmReg *arr_reg = get_reg(vm, cr, pc[1]);
             VmReg *idx_reg = get_reg(vm, cr, pc[2]);
             VmReg *out_reg = get_reg(vm, cr, pc[3]);
@@ -1063,11 +1088,10 @@ static Void run_loop (Vm *vm) {
             assert_always(idx_reg->tag == VM_REG_INT);
 
             *out_reg = array_get(&cast(VmObjArray*, arr_reg->obj)->array, cast(U64, idx_reg->i64));
+            cr->pc += 4;
         } break;
 
         case VM_OP_ARRAY_SET: {
-            cr->pc += 4;
-
             VmReg *arr_reg = get_reg(vm, cr, pc[1]);
             VmReg *idx_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
@@ -1087,11 +1111,11 @@ static Void run_loop (Vm *vm) {
             } else {
                 array_set(array, idx, *val_reg);
             }
+
+            cr->pc += 4;
         } break;
 
         case VM_OP_ARRAY_PUSH: {
-            cr->pc += 3;
-
             VmReg *arr_reg = get_reg(vm, cr, pc[1]);
             VmReg *val_reg = get_reg(vm, cr, pc[2]);
 
@@ -1099,18 +1123,18 @@ static Void run_loop (Vm *vm) {
             assert_always(arr_reg->obj->tag == VM_OBJ_ARRAY);
 
             array_push(&cast(VmObjArray*, arr_reg->obj)->array, *val_reg);
+
+            cr->pc += 3;
         } break;
 
         case VM_OP_RECORD_NEW: {
-            cr->pc += 2;
             VmReg *rec_reg = get_reg(vm, cr, pc[1]);
             rec_reg->obj = gc_new_record(vm);
             rec_reg->tag = VM_REG_OBJ;
+            cr->pc += 2;
         } break;
 
         case VM_OP_RECORD_SET: {
-            cr->pc += 4;
-
             VmReg *rec_reg = get_reg(vm, cr, pc[1]);
             VmReg *key_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
@@ -1119,11 +1143,10 @@ static Void run_loop (Vm *vm) {
             assert_always(key_reg->tag == VM_REG_OBJ && key_reg->obj->tag == VM_OBJ_STRING);
 
             map_add(&cast(VmObjRecord*, rec_reg->obj)->record, cast(VmObjString*, key_reg->obj)->string, *val_reg);
+            cr->pc += 4;
         } break;
 
         case VM_OP_RECORD_GET: {
-            cr->pc += 4;
-
             VmReg *rec_reg = get_reg(vm, cr, pc[1]);
             VmReg *key_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
@@ -1133,43 +1156,37 @@ static Void run_loop (Vm *vm) {
 
             Bool found = map_get(&cast(VmObjRecord*, rec_reg->obj)->record, cast(VmObjString*, key_reg->obj)->string, val_reg);
             if (! found) rec_reg->tag = VM_REG_NIL;
+            cr->pc += 4;
         } break;
 
         case VM_OP_GLOBAL_SET: {
-            cr->pc += 6;
-
             VmReg *val = get_reg(vm, cr, pc[1]);
             U32 glob_idx = read_u32(&pc[2]);
-
             array_set(&vm->globals, glob_idx, *val);
+            cr->pc += 6;
         } break;
 
         case VM_OP_GLOBAL_GET: {
-            cr->pc += 6;
-
             VmReg *out = get_reg(vm, cr, pc[1]);
             U32 glob_idx = read_u32(&pc[2]);
-
             *out = array_get(&vm->globals, glob_idx);
+            cr->pc += 6;
         } break;
 
         case VM_OP_CONST_GET: {
-            cr->pc += 6;
-
             VmReg *out  = get_reg(vm, cr, pc[1]);
             U32 val_idx = read_u32(&pc[2]);
-
             *out = array_get(&vm->constants, val_idx);
+            cr->pc += 6;
         } break;
 
         case VM_OP_PRINT: {
-            cr->pc += 2;
             VmReg *reg = get_reg(vm, cr, pc[1]);
             print_reg(vm, reg, true, true);
+            cr->pc += 2;
         } break;
 
         case VM_OP_STACK_TRACE: {
-            cr->pc += 2;
             VmReg *reg = get_reg(vm, cr, pc[1]);
             tmem_new(tm);
             String trace = stack_trace(vm, tm);
@@ -1177,19 +1194,18 @@ static Void run_loop (Vm *vm) {
             memcpy(cast(VmObjString*, obj)->string.data, trace.data, trace.count);
             reg->obj = obj;
             reg->tag = VM_REG_OBJ;
+            cr->pc += 2;
         } break;
 
         case VM_OP_IS_NIL: {
-            cr->pc += 3;
             VmReg *to   = get_reg(vm, cr, pc[1]);
             VmReg *from = get_reg(vm, cr, pc[2]);
             to->boolean = (from->tag == VM_REG_NIL);
             to->tag     = VM_REG_BOOL;
+            cr->pc += 3;
         } break;
 
         case VM_OP_CALL: {
-            cr->pc += 2;
-
             VmRegOp arg = pc[1];
             VmReg *arg_reg = get_reg(vm, cr, arg);
 
@@ -1201,8 +1217,6 @@ static Void run_loop (Vm *vm) {
         } break;
 
         case VM_OP_CALL_FFI: {
-            cr->pc += 3;
-
             VmRegOp arg  = pc[1];
             U8 arg_count = pc[2];
             VmReg *arg_reg = get_reg(vm, cr, arg);
@@ -1215,7 +1229,10 @@ static Void run_loop (Vm *vm) {
             arg_slice.count = arg_count;
 
             Auto fn = cast(VmCFunction, arg_reg->cfn);
-            fn(vm, arg_slice);
+            Int res = fn(vm, arg_slice);
+            assert_always(res >= 0);
+
+            cr->pc += 3;
         } break;
 
         case VM_OP_RETURN: {
@@ -1225,10 +1242,10 @@ static Void run_loop (Vm *vm) {
         } break;
 
         case VM_OP_MOVE: {
-            cr->pc += 3;
             VmReg *to   = get_reg(vm, cr, pc[1]);
             VmReg *from = get_reg(vm, cr, pc[2]);
             *to = *from;
+            cr->pc += 3;
         } break;
 
         case VM_OP_JUMP: {
@@ -1236,19 +1253,19 @@ static Void run_loop (Vm *vm) {
         } break;
 
         case VM_OP_JUMP_IF_FALSE: {
-            cr->pc += 6;
             U32 next_pc = read_u32(&pc[1]);
             VmReg *reg = get_reg(vm, cr, pc[5]);
             assert_always(reg->tag == VM_REG_BOOL);
-            if (! reg->boolean) cr->pc = next_pc;
+            if (reg->boolean) cr->pc += 6;
+            else              cr->pc = next_pc;
         } break;
 
         case VM_OP_JUMP_IF_TRUE: {
-            cr->pc += 6;
             U32 next_pc = read_u32(&pc[1]);
             VmReg *reg = get_reg(vm, cr, pc[5]);
             assert_always(reg->tag == VM_REG_BOOL);
             if (reg->boolean) cr->pc = next_pc;
+            else              cr->pc += 6;
         } break;
         }
     } done:;
@@ -1263,6 +1280,7 @@ Vm *vm_new (Mem *mem) {
 
     array_init(&vm->ffi, mem);
     array_init(&vm->registers, mem);
+    array_init(&vm->debug_info, mem);
     array_init(&vm->globals, mem);
     array_init(&vm->constants, mem);
     array_init(&vm->gc_objects, mem);

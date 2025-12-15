@@ -1310,19 +1310,17 @@ static Result check_node (Sem *sem, Ast *node) {
         Auto d = cast(Ast*, cast(TypeRecord*, t)->node);
         Scope *s = get_scope(d);
 
-        tmem_new(tm);
-        Map(IString*, Ast*) dedup;
-        map_init(&dedup, tm);
-
         array_iter (i, &n->inits) {
-            Ast *init = cast(Ast*, i);
-
-            Bool found; Auto val = map_uadd(&dedup, i->name, &found);
-            if (found) return error_nn(sem, *val, init, "Overriding initializers.");
-            *val = init;
-
+            Auto init = cast(Ast*, i);
             Ast *d = scope_lookup_outside_in(sem, s, i->name, init);
             if (! d) return error_nn(sem, init, s->owner, "Reference to undeclared struct member.");
+        }
+
+        // @todo We could make it so that we have default values
+        // in records and missing initializers use default values.
+        map_iter (slot, &s->map) {
+            U64 idx = array_find(&n->inits, IT->name == slot->key);
+            if (idx == ARRAY_NIL_IDX) return error_n(sem, node, "Missing initializer [%.*s] in record literal.", STR(*slot->key));
         }
 
         return RESULT_OK;
