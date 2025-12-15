@@ -57,7 +57,6 @@ istruct (Sem) {
 };
 
 static Ast *get_target (Ast *node);
-AstFile *sem_get_file (Sem *sem, Ast *node);
 static Result match_vv (Sem *sem, Ast **v1, Ast **v2);
 static Result match_nn (Sem *sem, Ast *n1, Ast *n2);
 static Result match_nv (Sem *sem, Ast *n, Ast **v);
@@ -404,9 +403,14 @@ static Result eval (Sem *sem, Ast *node) {
 
         Vm *vm = vm_new(tm);
         vm_set_prog(vm, prog);
-        vm_run(vm);
-        val = vm_transfer_result(sem->vm, vm);
-        vm_destroy(vm);
+        Bool ok = vm_run(vm);
+
+        if (ok) {
+            val = vm_transfer_result(sem->vm, vm);
+            vm_destroy(vm);
+        } else {
+            return error_n(sem, node, "Unable to compile-time eval expression.");
+        }
     }
 
     set_const_val(sem, node, val);
@@ -1710,9 +1714,12 @@ static Void check_nodes (Sem *sem) {
             if (sem->error_count) sem_panic(sem);
         }
 
+        U64 cn = sem->check_list.count;
+        U64 en = sem->eval_list.count;
+
         Bool new_to_check = (prev_to_check < sem->check_list.count);
-        Bool checked      = sem->check_list.count - array_find_remove_all(&sem->check_list, IT->flags & AST_CHECKED);
-        Bool evaled       = sem->eval_list.count  - array_find_remove_all(&sem->eval_list, IT->flags & AST_EVALED);
+        Bool checked      = cn - array_find_remove_all(&sem->check_list, IT->flags & AST_CHECKED);
+        Bool evaled       = en - array_find_remove_all(&sem->eval_list, IT->flags & AST_EVALED);
 
         if (!sem->found_a_sem_edge && !new_to_check && !checked && !evaled) break;
     }

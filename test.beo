@@ -1,4 +1,14 @@
 fn main {
+    fn bar -> Int {
+        var x = [1, 67];
+        return x[2];
+    }
+
+    fn foo (x = bar()) {
+        .print(x);
+    }
+
+    foo();
 }
 
 /*

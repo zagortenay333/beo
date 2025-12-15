@@ -149,7 +149,7 @@ Void  vm_set_prog          (Vm *, SemProgram *);
 Void  vm_set_prog_from_str (Vm *, String);
 VmReg vm_transfer_result   (Vm *, Vm *);
 Void  vm_print             (Vm *, Bool);
-Void  vm_run               (Vm *);
+Bool  vm_run               (Vm *);
 Void  vm_ffi_new           (Vm *, String);
 Void  vm_ffi_add           (Vm *, String, String, VmCFunction);
 VmReg vm_reg_add           (VmReg, VmReg);

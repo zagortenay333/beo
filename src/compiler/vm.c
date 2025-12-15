@@ -748,7 +748,7 @@ Void vm_print (Vm *vm, Bool show_source) {
 
         U8 *beg = array_ref(&vm->instructions, 0);
         U8 *cur = array_ref(&vm->instructions, fn->first_instruction);
-        U8 *end = array_ref(&vm->instructions, fn->last_instruction - 1);
+        U8 *end = array_ref(&vm->instructions, fn->last_instruction - 1) + 1;
 
         while (cur < end) {
             U32 pc = cur - beg;
@@ -930,8 +930,13 @@ static Void gc_run (Vm *vm) {
     }
 }
 
+// @todo We need to implement some heuristic for this.
+static Void gc_maybe_run (Vm *vm) {
+    gc_run(vm);
+}
+
 static VmObj *gc_new_string (Vm *vm, U64 count) {
-    gc_run(vm); // @todo Don't call the gc everytime...
+    gc_maybe_run(vm);
     Auto obj = mem_new(mem_root, VmObjString);
     obj->base.tag = VM_OBJ_STRING;
     obj->string.data = mem_alloc(mem_root, Char, .size=count);
@@ -941,7 +946,7 @@ static VmObj *gc_new_string (Vm *vm, U64 count) {
 }
 
 static VmObj *gc_new_array (Vm *vm) {
-    gc_run(vm);
+    gc_maybe_run(vm);
     Auto obj = mem_new(mem_root, VmObjArray);
     obj->base.tag = VM_OBJ_ARRAY;
     array_init(&obj->array, mem_root);
@@ -950,7 +955,7 @@ static VmObj *gc_new_array (Vm *vm) {
 }
 
 static VmObj *gc_new_record (Vm *vm) {
-    gc_run(vm);
+    gc_maybe_run(vm);
     Auto obj = mem_new(mem_root, VmObjRecord);
     obj->base.tag = VM_OBJ_RECORD;
     map_init(&obj->record, mem_root);
@@ -964,27 +969,63 @@ static String stack_trace (Vm *vm, Mem *mem) {
     array_iter_back (cr, &vm->call_stack, *) {
         Ast *info = array_get(&vm->debug_info, cr->pc);
         AstFile *file = sem_get_file(vm->sem->sem, info);
-        astr_push_fmt(&astr, "    %.*s:%lu\n", STR(*file->path), info->pos.first_line);
+        astr_push_fmt(&astr, "    %.*s:%lu", STR(*file->path), info->pos.first_line);
     }
 
     return astr_to_str(&astr);
 }
 
-// @todo A lot of the assert_always() should be turned into proper
-// error messages. Especially the asserts on types.
-static Void run_loop (Vm *vm) {
-    assert_dbg(vm->call_stack.count);
+Vm *vm_new (Mem *mem) {
+    Auto vm = mem_new(mem, Vm);
+    vm->mem = mem;
+
+    array_init(&vm->ffi, mem);
+    array_init(&vm->registers, mem);
+    array_init(&vm->debug_info, mem);
+    array_init(&vm->globals, mem);
+    array_init(&vm->constants, mem);
+    array_init(&vm->gc_objects, mem);
+    array_init(&vm->call_stack, mem);
+    array_init(&vm->instructions, mem);
+
+    // @todo A better way would be for fn_call/fn_return
+    // functions to dynamically adjust this array.
+    array_ensure_count(&vm->registers, 16*1024, true);
+
+    return vm;
+}
+
+Bool vm_run (Vm *vm) {
+    #define runtime_error(...) ({\
+        tmem_new(tm);\
+        String str = stack_trace(vm, tm);\
+        printf(TERM_RED("ERROR(Runtime): "));\
+        printf(__VA_ARGS__);\
+        printf("\n%.*s\n", STR(str));\
+        return false;\
+    })
+
+    #define assert_reg(REG, TAG) ({\
+        if ((REG)->tag != (TAG)) runtime_error("Runtime type mismatch.");\
+    })
+
+    #define assert_obj(REG, TAG) ({\
+        def1(reg, REG);\
+        if (reg->tag != VM_REG_OBJ || reg->obj->tag != (TAG)) runtime_error("Runtime type mismatch.");\
+    })
 
     #define run_binop(OP) ({\
         VmReg *out  = get_reg(vm, cr, pc[1]);\
         VmReg *arg1 = get_reg(vm, cr, pc[2]);\
         VmReg *arg2 = get_reg(vm, cr, pc[3]);\
         switch (arg1->tag) {\
-        case VM_REG_NIL:   badpath;\
-        case VM_REG_OBJ:   badpath;\
-        case VM_REG_FN:    badpath;\
-        case VM_REG_CFN:   badpath;\
-        case VM_REG_BOOL:  badpath;\
+        case VM_REG_NIL:\
+        case VM_REG_OBJ:\
+        case VM_REG_FN:\
+        case VM_REG_CFN:\
+        case VM_REG_BOOL:\
+            runtime_error("Type mismatch.");\
+            \
         case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 OP arg2->f64; break;\
         }\
@@ -996,17 +1037,20 @@ static Void run_loop (Vm *vm) {
         VmReg *arg1 = get_reg(vm, cr, pc[2]);\
         VmReg *arg2 = get_reg(vm, cr, pc[3]);\
         switch (arg1->tag) {\
-        case VM_REG_NIL:   badpath;\
-        case VM_REG_OBJ:   badpath;\
-        case VM_REG_FN:    badpath;\
-        case VM_REG_CFN:   badpath;\
-        case VM_REG_BOOL:  badpath;\
+        case VM_REG_NIL:\
+        case VM_REG_OBJ:\
+        case VM_REG_FN:\
+        case VM_REG_CFN:\
+        case VM_REG_BOOL:\
+            runtime_error("Type mismatch");\
+            \
         case VM_REG_INT:   out->tag = VM_REG_BOOL; out->boolean = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_BOOL; out->boolean = arg1->f64 OP arg2->f64; break;\
         }\
         cr->pc += 4;\
     })
 
+    fn_call(vm, vm->entry, 0);
     CallRecord *cr = array_ref_last(&vm->call_stack);
 
     while (true) {
@@ -1033,13 +1077,15 @@ static Void run_loop (Vm *vm) {
             VmReg *arg2 = get_reg(vm, cr, pc[3]);
 
             switch (arg1->tag) {
-            case VM_REG_NIL:   badpath;
-            case VM_REG_OBJ:   badpath;
-            case VM_REG_BOOL:  badpath;
-            case VM_REG_FLOAT: badpath;
-            case VM_REG_FN:    badpath;
-            case VM_REG_CFN:   badpath;
-            case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = arg1->i64 % arg2->i64; break;
+            case VM_REG_NIL:
+            case VM_REG_OBJ:
+            case VM_REG_BOOL:
+            case VM_REG_FLOAT:
+            case VM_REG_FN:
+            case VM_REG_CFN:
+                runtime_error("Type mismatch");
+
+            case VM_REG_INT: out->tag = VM_REG_INT; out->i64 = arg1->i64 % arg2->i64; break;
             }
 
             cr->pc += 4;
@@ -1050,11 +1096,13 @@ static Void run_loop (Vm *vm) {
             VmReg *arg = get_reg(vm, cr, pc[2]);
 
             switch (arg->tag) {
-            case VM_REG_NIL:   badpath;
-            case VM_REG_OBJ:   badpath;
-            case VM_REG_BOOL:  badpath;
-            case VM_REG_FN:    badpath;
-            case VM_REG_CFN:   badpath;
+            case VM_REG_NIL:
+            case VM_REG_OBJ:
+            case VM_REG_BOOL:
+            case VM_REG_FN:
+            case VM_REG_CFN:
+                runtime_error("Type mismatch.");
+
             case VM_REG_INT:   out->tag = VM_REG_INT; out->i64 = -arg->i64; break;
             case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = -arg->f64; break;
             }
@@ -1066,7 +1114,7 @@ static Void run_loop (Vm *vm) {
             VmReg *out = get_reg(vm, cr, pc[1]);
             VmReg *arg = get_reg(vm, cr, pc[2]);
 
-            assert_always(arg->tag == VM_REG_BOOL);
+            assert_reg(arg, VM_REG_BOOL);
             out->boolean = !arg->boolean;
             out->tag = VM_REG_BOOL;
 
@@ -1085,10 +1133,15 @@ static Void run_loop (Vm *vm) {
             VmReg *idx_reg = get_reg(vm, cr, pc[2]);
             VmReg *out_reg = get_reg(vm, cr, pc[3]);
 
-            assert_always(arr_reg->tag == VM_REG_OBJ && arr_reg->obj->tag == VM_OBJ_ARRAY);
-            assert_always(idx_reg->tag == VM_REG_INT);
+            assert_obj(arr_reg, VM_OBJ_ARRAY);
+            assert_reg(idx_reg, VM_REG_INT);
 
-            *out_reg = array_get(&cast(VmObjArray*, arr_reg->obj)->array, cast(U64, idx_reg->i64));
+            U64 idx = cast(U64, idx_reg->i64);
+            ArrayVmReg *array = &cast(VmObjArray*, arr_reg->obj)->array;
+
+            if (idx >= array->count) runtime_error("Out of bounds index: (idx=%lu len=%lu)", array->count, idx);
+            else                     *out_reg = array_get(array, idx);
+
             cr->pc += 4;
         } break;
 
@@ -1097,21 +1150,14 @@ static Void run_loop (Vm *vm) {
             VmReg *idx_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
 
-            assert_always(arr_reg->tag == VM_REG_OBJ && arr_reg->obj->tag == VM_OBJ_ARRAY);
-            assert_always(idx_reg->tag == VM_REG_INT);
+            assert_obj(arr_reg, VM_OBJ_ARRAY);
+            assert_reg(idx_reg, VM_REG_INT);
 
             U64 idx = cast(U64, idx_reg->i64);
             ArrayVmReg *array = &cast(VmObjArray*, arr_reg->obj)->array;
 
-            if (idx >= array->count) {
-                printf("Out of bounds index: (idx=%lu, len=%lu)\n", idx, array->count);
-                tmem_new(tm);
-                String str = stack_trace(vm, tm);
-                printf("%.*s\n", STR(str));
-                goto done;
-            } else {
-                array_set(array, idx, *val_reg);
-            }
+            if (idx >= array->count) runtime_error("Out of bounds index: (idx=%lu len=%lu)", array->count, idx);
+            else                     array_set(array, idx, *val_reg);
 
             cr->pc += 4;
         } break;
@@ -1119,12 +1165,8 @@ static Void run_loop (Vm *vm) {
         case VM_OP_ARRAY_PUSH: {
             VmReg *arr_reg = get_reg(vm, cr, pc[1]);
             VmReg *val_reg = get_reg(vm, cr, pc[2]);
-
-            assert_always(arr_reg->tag == VM_REG_OBJ);
-            assert_always(arr_reg->obj->tag == VM_OBJ_ARRAY);
-
+            assert_obj(arr_reg, VM_OBJ_ARRAY);
             array_push(&cast(VmObjArray*, arr_reg->obj)->array, *val_reg);
-
             cr->pc += 3;
         } break;
 
@@ -1140,8 +1182,8 @@ static Void run_loop (Vm *vm) {
             VmReg *key_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
 
-            assert_always(rec_reg->tag == VM_REG_OBJ && rec_reg->obj->tag == VM_OBJ_RECORD);
-            assert_always(key_reg->tag == VM_REG_OBJ && key_reg->obj->tag == VM_OBJ_STRING);
+            assert_obj(rec_reg, VM_OBJ_RECORD);
+            assert_obj(key_reg, VM_OBJ_STRING);
 
             map_add(&cast(VmObjRecord*, rec_reg->obj)->record, cast(VmObjString*, key_reg->obj)->string, *val_reg);
             cr->pc += 4;
@@ -1152,11 +1194,12 @@ static Void run_loop (Vm *vm) {
             VmReg *key_reg = get_reg(vm, cr, pc[2]);
             VmReg *val_reg = get_reg(vm, cr, pc[3]);
 
-            assert_always(rec_reg->tag == VM_REG_OBJ && rec_reg->obj->tag == VM_OBJ_RECORD);
-            assert_always(key_reg->tag == VM_REG_OBJ && key_reg->obj->tag == VM_OBJ_STRING);
+            assert_obj(rec_reg, VM_OBJ_RECORD);
+            assert_obj(key_reg, VM_OBJ_STRING);
 
             Bool found = map_get(&cast(VmObjRecord*, rec_reg->obj)->record, cast(VmObjString*, key_reg->obj)->string, val_reg);
-            if (! found) rec_reg->tag = VM_REG_NIL;
+            if (! found) runtime_error("Invalid record lookup.");
+
             cr->pc += 4;
         } break;
 
@@ -1210,9 +1253,11 @@ static Void run_loop (Vm *vm) {
             VmRegOp arg = pc[1];
             VmReg *arg_reg = get_reg(vm, cr, arg);
 
-            assert_always(arg > 0);
-            assert_always(arg_reg->tag == VM_REG_FN);
+            assert_reg(arg_reg, VM_REG_FN);
 
+            // Note the program counter will be advanced after
+            // the return by the return instruction handling code.
+            // This is done so that we get proper stack traces.
             fn_call(vm, arg_reg->fn, cr->reg_base + arg - 1);
             cr = array_ref_last(&vm->call_stack);
         } break;
@@ -1222,8 +1267,7 @@ static Void run_loop (Vm *vm) {
             U8 arg_count = pc[2];
             VmReg *arg_reg = get_reg(vm, cr, arg);
 
-            assert_always(arg > 0);
-            assert_always(arg_reg->tag == VM_REG_CFN);
+            assert_reg(arg_reg, VM_REG_CFN);
 
             SliceVmReg arg_slice;
             arg_slice.data = array_ref(&vm->registers, cr->reg_base + arg - 1);
@@ -1231,15 +1275,16 @@ static Void run_loop (Vm *vm) {
 
             Auto fn = cast(VmCFunction, arg_reg->cfn);
             Int res = fn(vm, arg_slice);
-            assert_always(res >= 0);
+            if (res < 0) runtime_error("Call to ffi function returned error.");
 
             cr->pc += 3;
         } break;
 
         case VM_OP_RETURN: {
             Bool exit_prog = fn_return(vm);
-            if (exit_prog) goto done;
+            if (exit_prog) return true;
             cr = array_ref_last(&vm->call_stack);
+            cr->pc += 2; // Advance past call instruction. See comment in call handling code.
         } break;
 
         case VM_OP_MOVE: {
@@ -1256,48 +1301,23 @@ static Void run_loop (Vm *vm) {
         case VM_OP_JUMP_IF_FALSE: {
             U32 next_pc = read_u32(&pc[1]);
             VmReg *reg = get_reg(vm, cr, pc[5]);
-            assert_always(reg->tag == VM_REG_BOOL);
-            if (reg->boolean) cr->pc += 6;
-            else              cr->pc = next_pc;
+            assert_reg(reg, VM_REG_BOOL);
+            if (! reg->boolean) cr->pc = next_pc;
+            else                cr->pc += 6;
         } break;
 
         case VM_OP_JUMP_IF_TRUE: {
             U32 next_pc = read_u32(&pc[1]);
             VmReg *reg = get_reg(vm, cr, pc[5]);
-            assert_always(reg->tag == VM_REG_BOOL);
+            assert_reg(reg, VM_REG_BOOL);
             if (reg->boolean) cr->pc = next_pc;
             else              cr->pc += 6;
         } break;
         }
-    } done:;
+    }
 
     #undef run_compare
     #undef run_binop
-}
-
-Vm *vm_new (Mem *mem) {
-    Auto vm = mem_new(mem, Vm);
-    vm->mem = mem;
-
-    array_init(&vm->ffi, mem);
-    array_init(&vm->registers, mem);
-    array_init(&vm->debug_info, mem);
-    array_init(&vm->globals, mem);
-    array_init(&vm->constants, mem);
-    array_init(&vm->gc_objects, mem);
-    array_init(&vm->call_stack, mem);
-    array_init(&vm->instructions, mem);
-
-    // @todo Perhaps a better way would be for fn_call/fn_return
-    // to dynamically adjust this array.
-    array_ensure_count(&vm->registers, 1024*1024, true);
-
-    return vm;
-}
-
-Void vm_run (Vm *vm) {
-    fn_call(vm, vm->entry, 0);
-    run_loop(vm);
 }
 
 Void vm_destroy (Vm *vm) {
