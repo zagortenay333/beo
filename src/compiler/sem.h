@@ -93,3 +93,4 @@ Void          sem_print_node_out     (Sem *, Ast *);
 VmReg         sem_get_const_val      (Sem *, Ast *);
 SemCoreTypes *sem_get_core_types     (Sem *);
 Scope        *sem_scope_get_ancestor (Scope *, AstTag);
+AstFile      *sem_get_file           (Sem *, Ast *);

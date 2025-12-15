@@ -57,7 +57,7 @@ istruct (Sem) {
 };
 
 static Ast *get_target (Ast *node);
-static AstFile *sem_get_file (Sem *sem, Ast *node);
+AstFile *sem_get_file (Sem *sem, Ast *node);
 static Result match_vv (Sem *sem, Ast **v1, Ast **v2);
 static Result match_nn (Sem *sem, Ast *n1, Ast *n2);
 static Result match_nv (Sem *sem, Ast *n, Ast **v);
@@ -475,7 +475,7 @@ static Void sem_set_target (Sem *sem, Ast *node, Ast *target) {
     sem->found_a_sem_edge = true;
 }
 
-static AstFile *sem_get_file (Sem *sem, Ast *node) {
+AstFile *sem_get_file (Sem *sem, Ast *node) {
     for (Scope *s = get_scope(node); s; s = s->parent) {
         Ast *o = s->owner;
         if (o->tag == AST_FILE) return cast(AstFile*, o);

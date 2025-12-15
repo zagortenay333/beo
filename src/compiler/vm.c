@@ -963,7 +963,8 @@ static String stack_trace (Vm *vm, Mem *mem) {
 
     array_iter_back (cr, &vm->call_stack, *) {
         Ast *info = array_get(&vm->debug_info, cr->pc);
-        sem_print_node_out(vm->sem->sem, info);
+        AstFile *file = sem_get_file(vm->sem->sem, info);
+        astr_push_fmt(&astr, "    %.*s:%lu\n", STR(*file->path), info->pos.first_line);
     }
 
     return astr_to_str(&astr);
