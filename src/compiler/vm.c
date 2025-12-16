@@ -1446,7 +1446,7 @@ VmReg vm_reg_not (VmReg r) {
 #undef binop
 #undef compare
 
-static VmReg vm_get_return_value (Vm *vm) {
+VmReg vm_get_return_value (Vm *vm) {
     return array_get(&vm->registers, 0);
 }
 
@@ -1467,11 +1467,11 @@ static VmReg vm_get_return_value (Vm *vm) {
 // See the eval() function in the sem.c module for usage.
 //
 // IMPORTANT: This function will do a shallow copy of arrays
-// and records! To deal with this the semantic analyser must
-// check that the expressions that eval at compile-time must
-// have either a primitive type, string type, or array/record
-// of primitive types. See the function can_eval() in the
-// sem.c module.
+// and records and it cannot copy VmFunction's! To deal with
+// this the semantic analyser must check that the expressions
+// that eval at compile-time must have either a primitive type,
+// string type, or array/record of primitive types. See the
+// function can_eval() in the sem.c module.
 VmReg vm_transfer_result (Vm *to, Vm *from) {
     VmReg reg = vm_get_return_value(from);
 

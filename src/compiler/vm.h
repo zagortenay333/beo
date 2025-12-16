@@ -126,7 +126,7 @@ istruct (CallRecord) {
 
 istruct (FfiModule) {
     String name;
-    VmObjRecord *obj; 
+    VmObjRecord *obj;
 };
 
 istruct (Vm) {
@@ -152,6 +152,7 @@ Void  vm_destroy           (Vm *);
 Void  vm_compile_prog      (Vm *, SemProgram *);
 Void  vm_compile_str       (Vm *, String);
 VmReg vm_transfer_result   (Vm *, Vm *);
+VmReg vm_get_return_value  (Vm *);
 Void  vm_print             (Vm *, Bool);
 Bool  vm_run               (Vm *);
 Void  vm_ffi_new           (Vm *, String);
