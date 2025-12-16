@@ -1,6 +1,4 @@
 fn main {
-    var x = "asdf";
-    var y = "asdf";
 }
 
 /*

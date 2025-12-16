@@ -1816,7 +1816,7 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     }
 
     // Add ffi functions to the autoimports scope:
-    array_iter (it, &vm->ffi, *) {
+    array_iter (it, &vm->ffi_modules, *) {
         Type *t = alloc_type(sem, TYPE_FFI);
         cast(TypeFfi*, t)->name = it->name;
         cast(TypeFfi*, t)->obj  = it->obj;

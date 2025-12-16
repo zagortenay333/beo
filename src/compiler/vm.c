@@ -97,9 +97,6 @@ static Void print_obj (Vm *vm, VmObj *obj, Bool runtime) {
 
 static Void print_cfn (Vm *vm, VmCFunction cfn) {
     array_iter (it, &vm->ffi_modules, *) {
-        assert_dbg(it->tag == VM_REG_OBJ);
-        assert_dbg(it->obj->tag == VM_OBJ_RECORD);
-
         map_iter (slot, &it->obj->record) {
             assert_dbg(slot->val.tag == VM_REG_CFN);
             if (slot->val.cfn == cfn) printf("cfn<%.*s>\n", STR(slot->key));
@@ -1315,7 +1312,7 @@ Vm *vm_new (Mem *mem) {
     Auto vm = mem_new(mem, Vm);
     vm->mem = mem;
 
-    array_init(&vm->ffi, mem);
+    array_init(&vm->ffi_modules, mem);
     array_init(&vm->registers, mem);
     array_init(&vm->debug_info, mem);
     array_init(&vm->globals, mem);
@@ -1338,7 +1335,7 @@ Void vm_destroy (Vm *vm) {
 }
 
 static VmObjRecord *get_ffi (Vm *vm, String name) {
-    array_iter (it, &vm->ffi, *) {
+    array_iter (it, &vm->ffi_modules, *) {
         if (str_match(it->name, name)) {
             return it->obj;
         }
@@ -1349,7 +1346,7 @@ static VmObjRecord *get_ffi (Vm *vm, String name) {
 
 Void vm_ffi_new (Vm *vm, String name) {
     VmObj *obj = gc_new_record(vm);
-    array_push_lit(&vm->ffi, .name=name, .obj=cast(VmObjRecord*, obj));
+    array_push_lit(&vm->ffi_modules, .name=name, .obj=cast(VmObjRecord*, obj));
 }
 
 Void vm_ffi_add (Vm *vm, String ffi_name, String name, VmCFunction fn) {
