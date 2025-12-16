@@ -814,30 +814,6 @@ Void vm_print (Vm *vm, Bool show_source) {
     #undef print_binary_op
 }
 
-static Void fn_call (Vm *vm, VmFunction *fn, U32 reg_base) {
-    CallRecord cr = { fn, fn->first_instruction, reg_base };
-    array_push(&vm->call_stack, cr);
-
-    // We must zero out all the register except the first
-    // n preallocated ones.
-    U64 i = 0;
-    U64 from = reg_base + fn->n_preallocated_regs;
-    array_iter_from (reg, &vm->registers, from, *) {
-        reg->tag = VM_REG_NIL;
-        i++;
-        if (i == 256) break;
-    }
-}
-
-static Bool fn_return (Vm *vm) {
-    array_pop(&vm->call_stack);
-    return vm->call_stack.count == 0;
-}
-
-static VmReg *get_reg (Vm *vm, CallRecord *cr, VmRegOp op) {
-    return array_ref(&vm->registers, cr->reg_base + op);
-}
-
 static void gc_free (Vm *vm, VmObj *obj) {
     switch (obj->tag) {
     case VM_OBJ_STRING: {
@@ -968,6 +944,30 @@ static VmObj *gc_new_record (Vm *vm) {
     return cast(VmObj*, obj);
 }
 
+static Void fn_call (Vm *vm, VmFunction *fn, U32 reg_base) {
+    CallRecord cr = { fn, fn->first_instruction, reg_base };
+    array_push(&vm->call_stack, cr);
+
+    // We must zero out all the register except the first
+    // n preallocated ones.
+    U64 i = 0;
+    U64 from = reg_base + fn->n_preallocated_regs;
+    array_iter_from (reg, &vm->registers, from, *) {
+        reg->tag = VM_REG_NIL;
+        i++;
+        if (i == 256) break;
+    }
+}
+
+static Bool fn_return (Vm *vm) {
+    array_pop(&vm->call_stack);
+    return vm->call_stack.count == 0;
+}
+
+static VmReg *get_reg (Vm *vm, CallRecord *cr, VmRegOp op) {
+    return array_ref(&vm->registers, cr->reg_base + op);
+}
+
 static String stack_trace (Vm *vm, Mem *mem) {
     AString astr = astr_new(mem);
 
@@ -978,26 +978,6 @@ static String stack_trace (Vm *vm, Mem *mem) {
     }
 
     return astr_to_str(&astr);
-}
-
-Vm *vm_new (Mem *mem) {
-    Auto vm = mem_new(mem, Vm);
-    vm->mem = mem;
-
-    array_init(&vm->ffi, mem);
-    array_init(&vm->registers, mem);
-    array_init(&vm->debug_info, mem);
-    array_init(&vm->globals, mem);
-    array_init(&vm->constants, mem);
-    array_init(&vm->gc_objects, mem);
-    array_init(&vm->call_stack, mem);
-    array_init(&vm->instructions, mem);
-
-    // @todo A better way would be for fn_call/fn_return
-    // functions to dynamically adjust this array.
-    array_ensure_count(&vm->registers, 16*1024, true);
-
-    return vm;
 }
 
 Bool vm_run (Vm *vm) {
@@ -1321,8 +1301,31 @@ Bool vm_run (Vm *vm) {
         }
     }
 
-    #undef run_compare
     #undef run_binop
+    #undef assert_reg
+    #undef assert_obj
+    #undef run_compare
+    #undef runtime_error
+}
+
+Vm *vm_new (Mem *mem) {
+    Auto vm = mem_new(mem, Vm);
+    vm->mem = mem;
+
+    array_init(&vm->ffi, mem);
+    array_init(&vm->registers, mem);
+    array_init(&vm->debug_info, mem);
+    array_init(&vm->globals, mem);
+    array_init(&vm->constants, mem);
+    array_init(&vm->gc_objects, mem);
+    array_init(&vm->call_stack, mem);
+    array_init(&vm->instructions, mem);
+
+    // @todo A better way would be for fn_call/fn_return
+    // functions to dynamically adjust this array.
+    array_ensure_count(&vm->registers, 16*1024, true);
+
+    return vm;
 }
 
 Void vm_destroy (Vm *vm) {
