@@ -1446,6 +1446,10 @@ VmReg vm_reg_not (VmReg r) {
 #undef binop
 #undef compare
 
+static VmReg vm_get_return_value (Vm *vm) {
+    return array_get(&vm->registers, 0);
+}
+
 // The purpose of this function is to take the return value
 // of the entry function in the @from VM and transfer it to
 // the @to VM.
@@ -1469,12 +1473,7 @@ VmReg vm_reg_not (VmReg r) {
 // of primitive types. See the function can_eval() in the
 // sem.c module.
 VmReg vm_transfer_result (Vm *to, Vm *from) {
-    // @todo Right now we assume that the very first register
-    // in the vm->registers array is the one with the return
-    // value. Although this is true and the gc won't mess with
-    // it, it still feels hacky and a more formal interface
-    // would be welcome.
-    VmReg reg = array_get(&from->registers, 0);
+    VmReg reg = vm_get_return_value(from);
 
     switch (reg.tag) {
     case VM_REG_NIL:
