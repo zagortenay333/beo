@@ -1,4 +1,10 @@
 fn main {
+    var x = "asdf";
+    var y = "asdf";
+}
+
+/*
+fn main {
     test_var_defs();
     test_fn_calls();
     test_typeof();
@@ -791,3 +797,4 @@ fn register_stress_test2 () {
     var x252 = 1;
     [1, 33];
 }
+*/

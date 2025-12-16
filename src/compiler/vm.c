@@ -95,9 +95,11 @@ static Void print_obj (Vm *vm, VmObj *obj, Bool runtime) {
     }
 }
 
-// @todo This is kinda stupid and slow.
 static Void print_cfn (Vm *vm, VmCFunction cfn) {
-    array_iter (it, &vm->ffi, *) {
+    array_iter (it, &vm->ffi_modules, *) {
+        assert_dbg(it->tag == VM_REG_OBJ);
+        assert_dbg(it->obj->tag == VM_OBJ_RECORD);
+
         map_iter (slot, &it->obj->record) {
             assert_dbg(slot->val.tag == VM_REG_CFN);
             if (slot->val.cfn == cfn) printf("cfn<%.*s>\n", STR(slot->key));
@@ -166,7 +168,7 @@ static Void emit_const (Emitter *em, VmRegOp result, VmReg val) {
     emit_bytes(em, VM_OP_CONST_GET, result, ENCODE_U32(idx));
 }
 
-// @todo We need to deduplicate strings...
+// @todo We should deduplicate string literals...
 static VmRegOp emit_const_string (Emitter *em, String str, VmRegOp result) {
     // String literal VmObj's are not allocated using
     // the gc since we never want them to be freed.
@@ -797,8 +799,9 @@ Void vm_print (Vm *vm, Bool show_source) {
                 U32 val_idx = read_u32(&cur[2]);
                 VmReg *val = array_ref(&vm->constants, val_idx);
                 cur += 6;
-                printf("r%i = ", result_reg);
-                print_reg(vm, val, false, true);
+                printf("r%i = const<%u: ", result_reg, val_idx);
+                print_reg(vm, val, false, false);
+                printf(">\n");
             } break;
             }
 
@@ -1480,8 +1483,6 @@ VmReg vm_transfer_result (Vm *to, Vm *from) {
         return reg;
 
     case VM_REG_FN: {
-        // @todo We should add support for transfering functions
-        // as well, but it's somewhat annoying to do...
         reg.tag = VM_REG_NIL;
         return reg;
     }

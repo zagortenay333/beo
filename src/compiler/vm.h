@@ -124,6 +124,11 @@ istruct (CallRecord) {
     U32 reg_base;
 };
 
+istruct (FfiModule) {
+    String name;
+    VmObjRecord *obj; 
+};
+
 istruct (Vm) {
     Mem *mem;
     SemProgram *sem;
@@ -133,7 +138,7 @@ istruct (Vm) {
     ArrayVmReg globals;
     ArrayVmReg constants;
     ArrayVmObj gc_objects;
-    Array(struct { String name; VmObjRecord *obj; }) ffi;
+    Array(FfiModule) ffi_modules;
 
     Array(Ast*) debug_info; // Index with pc.
 
