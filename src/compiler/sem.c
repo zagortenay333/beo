@@ -407,7 +407,7 @@ static Result eval (Sem *sem, Ast *node) {
         }
 
         Vm *vm = vm_new(tm);
-        vm_set_prog(vm, prog);
+        vm_compile_prog(vm, prog);
         Bool ok = vm_run(vm);
 
         if (ok) {
@@ -815,7 +815,7 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
             RETURN(match_tt(sem, underlying, t2));
         }
     }
-    
+
     default: RETURN(match_structural(sem, n1, n2, t1, t2), NOCAST);
     }
 
@@ -1088,6 +1088,7 @@ static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_arg
         array_set(call_args, ARRAY_IDX, n);
     }
 
+    if (call_args->count > 254) return error_n(sem, caller, "Max number of arguments to a function is 254.");
     return RESULT_OK;
 }
 
@@ -1113,11 +1114,11 @@ static Bool check_statement_returns (Sem *sem, Ast *node) {
         return check_statement_returns(sem, n->then_arm) && check_statement_returns(sem, n->else_arm);
     }
     default: return false;
-    } 
+    }
 }
 
-// @todo If we later add codegen, this function will have to be 
-// updated to iterate a bit more carefully. The same is true 
+// @todo If we later add codegen, this function will have to be
+// updated to iterate a bit more carefully. The same is true
 // for a number of other undocumented places...
 static Bool check_sequence_returns (Sem *sem, ArrayAst *seq) {
     array_iter (stmt, seq) {
@@ -1131,7 +1132,7 @@ static Bool check_sequence_returns (Sem *sem, ArrayAst *seq) {
                 case AST_TYPE_ALIAS:
                 case AST_TYPE_DISTINCT:
                     break;
-                default: 
+                default:
                     error_n(sem, stmt, "Unreachable code.");
                 }
             }
@@ -1308,7 +1309,6 @@ static Result check_node (Sem *sem, Ast *node) {
         Type *t = try_get_type_t(n->lhs);
 
         if (t->tag != TYPE_RECORD) return error_nt(sem, n->lhs, t, "expected a struct.");
-
         set_type(node, t);
 
         Auto d = cast(Ast*, cast(TypeRecord*, t)->node);
@@ -1333,8 +1333,8 @@ static Result check_node (Sem *sem, Ast *node) {
                 Ast *init = ast_alloc(sem->mem, AST_RECORD_LIT_INIT, 0);
                 init->pos = node->pos;
                 cast(AstRecordLitInit*, init)->sem_edge = cast(Ast*, def);
-                cast(AstRecordLitInit*, init)->name = slot->key;
-                cast(AstRecordLitInit*, init)->val  = def->init;
+                cast(AstRecordLitInit*, init)->name     = slot->key;
+                cast(AstRecordLitInit*, init)->val      = def->init;
                 array_push(&n->inits, cast(AstRecordLitInit*, init));
                 add_to_check_list(sem, init, get_scope(node));
             }

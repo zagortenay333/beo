@@ -73,8 +73,6 @@ istruct (VmFunction) {
     //     r2 = first call arg
     //     r3 = second call arg
     //
-    // @todo The register r0 is reserved for the return value
-    // even if the function doesn't actually return a val.
     U32 n_preallocated_regs;
 };
 
@@ -141,12 +139,13 @@ istruct (Vm) {
 
     ArrayVmReg registers;
     Array(CallRecord) call_stack;
+    U32 time_to_next_gc;
 };
 
 Vm   *vm_new               (Mem *);
 Void  vm_destroy           (Vm *);
-Void  vm_set_prog          (Vm *, SemProgram *);
-Void  vm_set_prog_from_str (Vm *, String);
+Void  vm_compile_prog      (Vm *, SemProgram *);
+Void  vm_compile_str       (Vm *, String);
 VmReg vm_transfer_result   (Vm *, Vm *);
 Void  vm_print             (Vm *, Bool);
 Bool  vm_run               (Vm *);

@@ -18,7 +18,7 @@ fn main {
 
 fn test_start (fn_name: String) {
     .print("--------------------------------------------");
-    .print(fn_name);
+    .print(.caller_name());
     .print("--------------------------------------------");
 }
 

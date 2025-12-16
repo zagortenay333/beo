@@ -56,8 +56,7 @@ static U32 get_bytecode_pos (Emitter *em) {
 
 static VmRegOp reg_push (Emitter *em) {
     if (em->next_reg > UINT8_MAX) {
-        // @todo Make this a better error message.
-        printf(TERM_RED("ERROR(Vm): ") "Ran out of registers.\n\n");
+        printf(TERM_RED("ERROR(Vm): ") "Too many local variables and temporaries. Max allowed is 256.\n\n");
         sem_print_node_out(em->vm->sem->sem, cast(Ast*, em->fn));
         panic();
     }
@@ -162,7 +161,7 @@ static Void record_debug_info (Emitter *em) {
 
 static Void emit_const (Emitter *em, VmRegOp result, VmReg val) {
     U32 idx = em->vm->constants.count;
-    assert_always(idx < UINT32_MAX); // @todo Better error message.
+    assert_always(idx < UINT32_MAX);
     array_push(&em->vm->constants, val);
     emit_bytes(em, VM_OP_CONST_GET, result, ENCODE_U32(idx));
 }
@@ -368,8 +367,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         SemCoreTypes *core_types = sem_get_core_types(em->vm->sem->sem);
 
-        if (sem_get_type(em->vm->sem, n->lhs) == core_types->type_CFn) {
-            assert_always(n->args.count <= 254);
+        if (sem_get_type(em->vm->sem->sem, n->lhs) == core_types->type_CFn) {
             emit_bytes(em, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, n->args.count));
         } else {
             emit_bytes(em, VM_OP_CALL, fn_reg);
@@ -405,7 +403,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
         } else if (def->flags & AST_IS_LOCAL_VAR) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
-            assert_always(found);
+            assert_dbg(found);
 
             if (pref == -1) {
                 em->next_reg = result_reg;
@@ -534,7 +532,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
             } else {
                 VmRegOp result_reg;
                 Bool found = map_get(&em->binds, def->id, &result_reg);
-                assert_always(found);
+                assert_dbg(found);
                 emit_rhs(result_reg);
             }
         } else if (n->op1->tag == AST_INDEX) {
@@ -695,7 +693,7 @@ static Void emit_fn_constant (Vm *vm, AstFn *ast) {
     array_push(&vm->constants, reg);
 }
 
-Void vm_set_prog (Vm *vm, SemProgram *prog) {
+Void vm_compile_prog (Vm *vm, SemProgram *prog) {
     vm->sem = prog;
 
     array_iter (global, &vm->sem->globals) {
@@ -711,11 +709,11 @@ Void vm_set_prog (Vm *vm, SemProgram *prog) {
     array_iter (fn, &vm->sem->fns) emit_fn_bytecode(vm, fn);
 }
 
-Void vm_set_prog_from_str (Vm *vm, String main_file_path) {
+Void vm_compile_str (Vm *vm, String main_file_path) {
     Interns *interns = interns_new(vm->mem, main_file_path);
     Sem *sem         = sem_new(vm->mem, vm, interns);
     SemProgram *prog = sem_check(sem, main_file_path);
-    vm_set_prog(vm, prog);
+    vm_compile_prog(vm, prog);
 }
 
 Void vm_print (Vm *vm, Bool show_source) {
@@ -925,9 +923,21 @@ static Void gc_run (Vm *vm) {
     }
 }
 
-// @todo We need to implement some heuristic for this.
+// @todo We need to implement a better heuristic here.
 static Void gc_maybe_run (Vm *vm) {
-    gc_run(vm);
+    vm->time_to_next_gc++;
+
+    U32 n = 100;
+
+    #if BUILD_DEBUG
+        n = 1;
+    #endif
+
+    if (vm->time_to_next_gc == n) {
+        gc_run(vm);
+        vm->time_to_next_gc = 0;
+    }
+
 }
 
 static VmObj *gc_new_string (Vm *vm, U64 count) {
@@ -994,7 +1004,7 @@ Bool vm_run (Vm *vm) {
     #define runtime_error(...) ({\
         tmem_new(tm);\
         String str = stack_trace(vm, tm);\
-        printf(TERM_RED("ERROR(Runtime): "));\
+        printf(TERM_RED("ERROR(Vm): "));\
         printf(__VA_ARGS__);\
         printf("\n%.*s\n", STR(str));\
         return false;\
