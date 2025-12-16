@@ -678,13 +678,8 @@ static Void emit_fn_bytecode (Vm *vm, AstFn *ast) {
 
     emit_sequence(&em, cast(Ast*, ast), &ast->statements);
 
-    // @todo If the function ends without a return (in the ast)
-    // then we have to emit a return instruction in order to
-    // prevent the program counter from jumping out of bounds
-    // in the run loop. Not sure what the the right way is to
-    // deal with this. For now, we always emit a return just
-    // in case.
-    array_push(&vm->instructions, VM_OP_RETURN);
+    // We emit a return instruction just in case.
+    if (! cast(AstBaseFn*, ast)->output) array_push(&vm->instructions, VM_OP_RETURN);
 
     fn->last_instruction = vm->instructions.count;
 }

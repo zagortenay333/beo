@@ -152,6 +152,11 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     return file;
 }
 
+static Type *get_underlying_from_distinct_type (Sem *sem, Type *t) {
+    Auto n = cast(AstTypeDistinct*, map_get_assert(&sem->type_def, t->id));
+    return get_type(n->val);
+}
+
 static IString *get_name (Ast *node) {
     switch (node->tag) {
     #define X(TAG, TYPE) case TAG: return cast(TYPE*, node)->name;
@@ -378,9 +383,9 @@ static Result eval (Sem *sem, Ast *node) {
         SemProgram *prog = collect_program(sem, node, tm);
 
         // We have to construct an AST for an imaginary entry function.
-        // @todo Right now we dont bother constructing the return signature
-        // AST node because the the backend doesn't need one, but it still
-        // feels kind of sketchy.
+        // Right now we dont bother constructing the return signature
+        // AST node because the the backend doesn't need one, but it
+        // still feels kind of sketchy.
         if (prog->entry->tag != AST_FN) {
             AstFile *file  = get_file(prog->entry);
             String fn_name = astr_fmt(tm, "global_var_wrapper:%.*s:%lu", STR(*file->path), prog->entry->pos.first_line);
@@ -870,11 +875,6 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
     }
 }
 
-static Type *get_underlying_from_distinct_type (Sem *sem, Type *t) {
-    Auto n = cast(AstTypeDistinct*, map_get_assert(&sem->type_def, t->id));
-    return get_type(n->val);
-}
-
 // This function can cause one of the nodes to be implicitly casted,
 // which is done by writing through the double pointer.
 //
@@ -1323,8 +1323,23 @@ static Result check_node (Sem *sem, Ast *node) {
         // @todo We could make it so that we have default values
         // in records and missing initializers use default values.
         map_iter (slot, &s->map) {
-            U64 idx = array_find(&n->inits, IT->name == slot->key);
-            if (idx == ARRAY_NIL_IDX) return error_n(sem, node, "Missing initializer [%.*s] in record literal.", STR(*slot->key));
+            assert_dbg(slot->val->tag == AST_VAR_DEF);
+
+            Auto def = cast(AstVarDef*, slot->val);
+            U64 idx  = array_find(&n->inits, IT->name == slot->key);
+
+            if (idx == ARRAY_NIL_IDX) {
+                if (! def->init) return error_nn(sem, node, cast(Ast*, def), "Missing initializer in record literal, and there is not default initializer in record definition.");
+
+                // Let's construct the missing initializer AST:
+                Ast *init = ast_alloc(sem->mem, AST_RECORD_LIT_INIT, 0);
+                init->pos = node->pos;
+                cast(AstRecordLitInit*, init)->sem_edge = cast(Ast*, def);
+                cast(AstRecordLitInit*, init)->name = slot->key;
+                cast(AstRecordLitInit*, init)->val  = def->init;
+                array_push(&n->inits, cast(AstRecordLitInit*, init));
+                add_to_check_list(sem, init, get_scope(node));
+            }
         }
 
         return RESULT_OK;
@@ -1462,8 +1477,6 @@ static Result check_node (Sem *sem, Ast *node) {
 
         if ((node->flags & (AST_IS_LOCAL_VAR|AST_IS_GLOBAL_VAR)) && !(node->flags & AST_IS_FN_ARG)) {
             if (! n->init) return error_n(sem, node, "Missing initializer.");
-        } else if (n->init && !(node->flags & AST_IS_FN_ARG)) {
-            return error_n(sem, node, "Initializer not supported here.");
         }
 
         if (n->init && n->constraint) {
@@ -1482,8 +1495,7 @@ static Result check_node (Sem *sem, Ast *node) {
             if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->init, t, "expected concrete type");
         }
 
-        if ((node->flags & AST_IS_GLOBAL_VAR) && !(n->init->flags & AST_EVALED)) return RESULT_DEFER;
-        if ((node->flags & AST_IS_FN_ARG) && n->init && !(n->init->flags & AST_EVALED)) return RESULT_DEFER;
+        if (!(node->flags & AST_IS_LOCAL_VAR) && n->init && !(n->init->flags & AST_EVALED)) return RESULT_DEFER;
 
         return RESULT_OK;
     }
@@ -1495,21 +1507,16 @@ static Result check_node (Sem *sem, Ast *node) {
     }
 
     case AST_TYPE_DISTINCT: {
-        AstTypeDistinct *n = cast(AstTypeDistinct*, node);
-        Type *t   = try_get_type_t(n->val);
-        Type *dt = 0;
+        Auto n = cast(AstTypeDistinct*, node);
+        Type *t = try_get_type_t(n->val);
 
-        if (t->flags & TYPE_IS_SPECIAL) {
-            return error_nt(sem, n->val, t, "expected a concrete type");
-        } else {
-            // @todo I am not sure why we are not calling alloc_type() instead
-            // of directly allocating. The only explanation might be that we
-            // don't want the type to be included in Sem.types.
-            U64 size = get_type_struct_size[t->tag];
-            dt = mem_alloc(sem->mem, Type, .align=get_type_struct_align[t->tag], .size=size);
-            memcpy(dt, t, size);
-            dt->id = sem->next_type_id++;
-        }
+        if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->val, t, "expected a concrete type");
+
+        U64 size = get_type_struct_size[t->tag];
+        Type *dt = mem_alloc(sem->mem, Type, .align=get_type_struct_align[t->tag], .size=size);
+        memcpy(dt, t, size);
+        dt->id = sem->next_type_id++;
+        array_push(&sem->types, dt);
 
         dt->flags |= TYPE_IS_DISTINCT;
         map_add(&sem->type_def, dt->id, node);

@@ -207,8 +207,12 @@ static U64 precedence_of (TokenTag token_tag) {
 
 static Ast *parse_record_member (Parser *par) {
     switch (lex_peek(lex)->tag) {
-    case TOKEN_IDENT: return parse_var_def(par, true, false);
-    default:          return 0;
+    case TOKEN_IDENT: {
+        Ast *r = parse_var_def(par, true, false);
+        if (cast(AstVarDef*, r)->init) cast(AstVarDef*, r)->init->flags |= AST_MUST_EVAL;
+        return r;
+    }
+    default: return 0;
     }
 }
 
@@ -955,7 +959,7 @@ static Ast *parse_top_statement (Parser *par) {
 }
 
 AstFile *par_parse_file (Parser *par, IString *filepath) {
-    String content = fs_read_entire_file(mem_base(par->mem), *filepath, 0);
+    String content = fs_read_entire_file(par->mem, *filepath, 0);
     if (! content.data) return 0;
 
     par->file = cast(AstFile*, ast_alloc(par->mem, AST_FILE, 0));
