@@ -1384,35 +1384,23 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_ARRAY_LITERAL: {
         Auto n = cast(AstArrayLiteral*, node);
-        Type *t = get_type(node);
-
-        if (! t) t = set_type(node, alloc_type_array(sem, node, 0));
 
         Type *et;
-        Ast *el;
 
         if (n->lhs) {
-            el = n->lhs;
+            Ast *el = n->lhs;
             et = try_get_type_t(el);
-            array_iter (init, &n->inits) try(match_nc(sem, init, n->lhs));
+            array_iter (init, &n->inits, *) try(match_nv(sem, n->lhs, init));
         } else {
-            el = array_get(&n->inits, 0);
+            Ast *el = array_get(&n->inits, 0);
             et = try_get_type_v(el);
             array_iter_from (init, &n->inits, 1, *) try(match_nv(sem, el, init));
         }
 
-        cast(TypeArray*, t)->element = et;
+        if (et->flags & TYPE_IS_SPECIAL) return error_n(sem, node, "Invalid element type for array.");
 
-        switch (et->tag) {
-        case TYPE_ARRAY: break;
-        case TYPE_BOOL: break;
-        case TYPE_FLOAT: break;
-        case TYPE_FN: break;
-        case TYPE_INT: break;
-        case TYPE_RECORD: break;
-        case TYPE_STRING: break;
-        default: return error_nt(sem, el, et, "Invalid element type for array.");
-        }
+        Type *t = set_type(node, alloc_type_array(sem, node, 0));
+        cast(TypeArray*, t)->element = et;
 
         return RESULT_OK;
     }

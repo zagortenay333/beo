@@ -1,3 +1,13 @@
+// @todo
+//
+// To enable the following code to compile:
+//
+//     var x: []?Int = [1, 2];
+//     var x: (?Int, ?Int) = (1, 2);
+//
+// we need to treat array and tuple literals which are
+// not in standalone position as having a variable type.
+
 fn main {
 }
 
