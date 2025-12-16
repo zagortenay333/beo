@@ -1320,8 +1320,6 @@ static Result check_node (Sem *sem, Ast *node) {
             if (! d) return error_nn(sem, init, s->owner, "Reference to undeclared struct member.");
         }
 
-        // @todo We could make it so that we have default values
-        // in records and missing initializers use default values.
         map_iter (slot, &s->map) {
             assert_dbg(slot->val->tag == AST_VAR_DEF);
 
