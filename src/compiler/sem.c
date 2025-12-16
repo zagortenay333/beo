@@ -1819,7 +1819,7 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     array_iter (it, &vm->ffi, *) {
         Type *t = alloc_type(sem, TYPE_FFI);
         cast(TypeFfi*, t)->name = it->name;
-        cast(TypeFfi*, t)->obj  = it->obj; // @todo Can we get rid of this and use sem_get_const_val() instead?
+        cast(TypeFfi*, t)->obj  = it->obj;
 
         Ast *n = ast_alloc(sem->mem, AST_DUMMY, AST_IS_GLOBAL_VAR|AST_MUST_EVAL|AST_EVALED);
         add_to_check_list(sem, n, sem->autoimports);
