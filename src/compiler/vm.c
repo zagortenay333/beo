@@ -1010,7 +1010,6 @@ Bool vm_run (Vm *vm) {
         case VM_REG_CFN:\
         case VM_REG_BOOL:\
             runtime_error("Type mismatch.");\
-            \
         case VM_REG_INT:   out->tag = VM_REG_INT;   out->i64 = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_FLOAT; out->f64 = arg1->f64 OP arg2->f64; break;\
         }\
@@ -1028,7 +1027,6 @@ Bool vm_run (Vm *vm) {
         case VM_REG_CFN:\
         case VM_REG_BOOL:\
             runtime_error("Type mismatch");\
-            \
         case VM_REG_INT:   out->tag = VM_REG_BOOL; out->boolean = arg1->i64 OP arg2->i64; break;\
         case VM_REG_FLOAT: out->tag = VM_REG_BOOL; out->boolean = arg1->f64 OP arg2->f64; break;\
         }\
