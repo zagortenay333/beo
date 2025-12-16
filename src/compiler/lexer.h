@@ -25,6 +25,7 @@ istruct (Interns);
     X(false, FALSE)\
     X(fn, FN)\
     X(if, IF)\
+    X(macro, MACRO)\
     X(nil, NIL)\
     X(record, RECORD)\
     X(return, RETURN)\

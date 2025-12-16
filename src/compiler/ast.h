@@ -26,6 +26,9 @@ istruct (Interns);
 #define EACH_AST_NODE(X)\
     X(AST_ADD, AstAdd, AST_BASE_BINARY, 0)\
     X(AST_ARRAY_LITERAL, AstArrayLiteral, 0, AST_IS_LITERAL)\
+    X(AST_ARG_POLY_CODE, AstArgPolyCode, 0, 0)\
+    X(AST_ARG_POLY_TYPE, AstArgPolyType, 0, AST_IS_TYPE | AST_HAS_POLY_ARGS)\
+    X(AST_ARG_POLY_VALUE, AstArgPolyValue, 0, AST_HAS_POLY_ARGS)\
     X(AST_ARRAY_TYPE, AstArrayType, 0, AST_IS_TYPE)\
     X(AST_ASSIGN, AstAssign, AST_BASE_BINARY, 0)\
     X(AST_BLOCK, AstBlock, 0, AST_CREATES_SCOPE)\
@@ -53,12 +56,14 @@ istruct (Interns);
     X(AST_FILE, AstFile, 0, AST_CREATES_SCOPE)\
     X(AST_FLOAT_LITERAL, AstFloatLiteral, 0, AST_IS_LITERAL)\
     X(AST_FN, AstFn, AST_BASE_FN, AST_IS_READ_ONLY | AST_CREATES_SCOPE | AST_IS_LITERAL)\
+    X(AST_FN_POLY, AstFnPoly, AST_BASE_FN, AST_IS_READ_ONLY | AST_CREATES_SCOPE | AST_IS_POLYMORPH | AST_CAN_EVAL)\
     X(AST_FN_TYPE, AstFnType, AST_BASE_FN, AST_IS_TYPE)\
     X(AST_GREATER, AstGreater, AST_BASE_BINARY, 0)\
     X(AST_GREATER_EQUAL, AstGreaterEqual, AST_BASE_BINARY, 0)\
     X(AST_IDENT, AstIdent, 0, AST_IS_LVALUE)\
     X(AST_IF, AstIf, 0, 0)\
     X(AST_INDEX, AstIndex, 0, 0)\
+    X(AST_INTERFACE, AstInterface, 0, 0)\
     X(AST_INT_LITERAL, AstIntLiteral, 0, AST_IS_LITERAL)\
     X(AST_LESS, AstLess, AST_BASE_BINARY, 0)\
     X(AST_LESS_EQUAL, AstLessEqual, AST_BASE_BINARY, 0)\
@@ -91,9 +96,13 @@ istruct (Interns);
 // to scopes before any code generators have run.
 // They must have an "IString *name" field.
 #define EACH_STATIC_NAME_GENERATOR(X)\
+    X(AST_ARG_POLY_CODE, AstArgPolyCode)\
+    X(AST_ARG_POLY_TYPE, AstArgPolyType)\
+    X(AST_ARG_POLY_VALUE, AstArgPolyValue)\
     X(AST_ENUM, AstEnum)\
     X(AST_ENUM_FIELD, AstEnumField)\
     X(AST_FN, AstFn)\
+    X(AST_FN_POLY, AstFnPoly)\
     X(AST_RECORD, AstRecord)\
     X(AST_TYPE_ALIAS, AstTypeAlias)\
     X(AST_TYPE_DISTINCT, AstTypeDistinct)\
@@ -111,29 +120,35 @@ istruct (Interns);
     X(AST_CONTINUE, AstContinue, "Target is always an AstWhile.")\
     X(AST_DEFER, AstDefer, "Target is always the corresponding Scope.owner.")\
     X(AST_DOT, AstDot, "Always has a target.")\
+    X(AST_FN_POLY, AstFnPoly, "The target is the fn instance if the poly fn was assigned like a value.")\
     X(AST_IDENT, AstIdent, "Always has a target.")\
     X(AST_INDEX, AstIndex, "If indexing into a tuple, target is the tuple field.")\
-    X(AST_RETURN, AstReturn, "Target is always a function or macro.")\
-    X(AST_RECORD_LIT_INIT, AstRecordLitInit, "Target is always a record field Ast.")
+    X(AST_RECORD_LIT_INIT, AstRecordLitInit, "Target is always a record field Ast.")\
+    X(AST_RETURN, AstReturn, "Target is always a function or macro.")
 
 typedef U64 AstId; // 0 means no id.
 
 fenum (AstFlags, U64) {
-    AST_ADDED_TO_CHECK_LIST = flag(0),
-    AST_CAN_EVAL            = flag(1),
-    AST_CHECKED             = flag(2),
-    AST_CREATES_SCOPE       = flag(3),
-    AST_EVALED              = flag(4),
-    AST_IS_FN_ARG           = flag(5),
-    AST_IS_GLOBAL_VAR       = flag(6),
-    AST_IS_LITERAL          = flag(7),
-    AST_IS_LOCAL_VAR        = flag(8),
-    AST_IS_LVALUE           = flag(9),
-    AST_IS_READ_ONLY        = flag(10),
-    AST_IS_SEALED_SCOPE     = flag(11),
-    AST_IS_TYPE             = flag(12),
-    AST_MUST_EVAL           = flag(13),
-    AST_VISITED             = flag(14),
+    AST_ADDED_TO_CHECK_LIST    = flag(0),
+    AST_CAN_EVAL               = flag(1),
+    AST_CHECKED                = flag(2),
+    AST_CREATES_SCOPE          = flag(3),
+    AST_EVALED                 = flag(4),
+    AST_HAS_POLY_ARGS          = flag(5),
+    AST_IN_POLY_ARG_POSITION   = flag(6),
+    AST_IN_STANDALONE_POSITION = flag(7),
+    AST_IS_FN_ARG              = flag(8),
+    AST_IS_GLOBAL_VAR          = flag(9),
+    AST_IS_LITERAL             = flag(10),
+    AST_IS_LOCAL_VAR           = flag(11),
+    AST_IS_LVALUE              = flag(12),
+    AST_IS_MACRO               = flag(13),
+    AST_IS_POLYMORPH           = flag(14),
+    AST_IS_READ_ONLY           = flag(15),
+    AST_IS_SEALED_SCOPE        = flag(16),
+    AST_IS_TYPE                = flag(17),
+    AST_MUST_EVAL              = flag(18),
+    AST_VISITED                = flag(19),
 
     // These flags are set by the Sem module.
     AST_SEM_FLAGS = AST_CHECKED | AST_ADDED_TO_CHECK_LIST,
@@ -171,6 +186,9 @@ istruct (AstBaseFn)            { Ast base; ArrayAst inputs; Ast *output; };
 istruct (AstBaseUnary)         { Ast base; Ast *op; };
 
 istruct (AstAdd)               { AstBaseBinary base; };
+istruct (AstArgPolyCode)       { Ast base; IString *name; Ast *constraint, *init; U64 n; };
+istruct (AstArgPolyType)       { Ast base; IString *name; Ast *constraint, *init; Bool is_tuple; };
+istruct (AstArgPolyValue)      { Ast base; IString *name; Ast *constraint, *init; };
 istruct (AstArrayLiteral)      { Ast base; Ast *lhs; ArrayAst inits; };
 istruct (AstArrayType)         { Ast base; Ast *element; };
 istruct (AstAssign)            { AstBaseBinary base; AstTag fused_op /* AST_ASSIGN for =, AST_ADD for +=, ... */; };
@@ -199,12 +217,14 @@ istruct (AstEqual)             { AstBaseBinary base; };
 istruct (AstFile)              { Ast base; IString *path; String content; ArrayAst statements; };
 istruct (AstFloatLiteral)      { Ast base; F64 val; };
 istruct (AstFn)                { AstBaseFn base; IString *name; ArrayAst statements; };
+istruct (AstFnPoly)            { AstBaseFn base; IString *name; ArrayAst statements; Ast *sem_edge; };
 istruct (AstFnType)            { AstBaseFn base; };
 istruct (AstGreater)           { AstBaseBinary base; };
 istruct (AstGreaterEqual)      { AstBaseBinary base; };
 istruct (AstIdent)             { Ast base; IString *name; Ast *sem_edge; };
 istruct (AstIf)                { Ast base; Ast *cond, *then_arm, *else_arm; };
 istruct (AstIndex)             { Ast base; Ast *lhs, *idx, *sem_edge; };
+istruct (AstInterface)         { Ast base; IString *name; };
 istruct (AstIntLiteral)        { Ast base; I64 val; };
 istruct (AstLess)              { AstBaseBinary base; };
 istruct (AstLessEqual)         { AstBaseBinary base; };
@@ -311,6 +331,9 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     if (_(f) & AST_BASE_FN)     { AM(A, I, AstBaseFn, inputs); FM(F, AstBaseFn, output); }\
     \
     switch (NODE->tag) {\
+    case AST_ARG_POLY_CODE:    FM(F, AstArgPolyCode, constraint); FM(F, AstArgPolyCode, init); break;\
+    case AST_ARG_POLY_TYPE:    FM(F, AstArgPolyType, constraint); FM(F, AstArgPolyType, init); break;\
+    case AST_ARG_POLY_VALUE:   FM(F, AstArgPolyValue, constraint); FM(F, AstArgPolyValue, init); break;\
     case AST_ARRAY_LITERAL:    FM(F, AstArrayLiteral, lhs); AM(A, I, AstArrayLiteral, inits); break;\
     case AST_ARRAY_TYPE:       FM(F, AstArrayType, element); break;\
     case AST_BLOCK:            AM(A, I, AstBlock, statements); break;\
@@ -324,6 +347,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_ENUM_FIELD:       FM(F, AstEnumField, init); break;\
     case AST_FILE:             AM(A, I, AstFile, statements); break;\
     case AST_FN:               AM(A, I, AstFn, statements); break;\
+    case AST_FN_POLY:          AM(A, I, AstFnPoly, statements); break;\
     case AST_IF:               FM(F, AstIf, cond); FM(F, AstIf, then_arm); FM(F, AstIf, else_arm); break;\
     case AST_INDEX:            FM(F, AstIndex, lhs); FM(F, AstIndex, idx); break;\
     case AST_NOTE:             FM(F, AstNote, val); break;\

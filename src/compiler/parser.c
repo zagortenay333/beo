@@ -7,12 +7,19 @@
 #include "compiler/lexer.h"
 #include "compiler/parser.h"
 
+istruct (ArgContext) {
+    ArrayAst args;
+    Array(IString*) polyargs;
+};
+
 istruct (Parser) {
     Mem *mem;
     AstFile *file;
     Interns *interns;
     Lexer *lexer;
     Bool brace_ends_expression;
+    Array(ArgContext*) arg_context_pool;
+    Array(ArgContext*) arg_context_stack;
     Map(AstId, ArrayAstNote*) notes;
 };
 
@@ -25,6 +32,7 @@ static Ast *parse_expression (Parser *par, U64 left_op);
 static Ast *parse_expression_before_brace (Parser *par);
 static Ast *try_parse_expression (Parser *par, U64 left_op);
 static Void try_parse_expression_list (Parser *par, ArrayAst *out);
+static Void mark_poly_arg_position (Parser *par, Ast *parent, Ast *node);
 static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword);
 
 Noreturn
@@ -265,6 +273,13 @@ static Ast *parse_enum (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_interface (Parser *par) {
+    Auto node = make_node(par, AstInterface);
+    lex_eat_this(lex, '/');
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    return complete_node(par, node);
+}
+
 static Ast *parse_ident (Parser *par) {
     Auto node = make_node(par, AstIdent);
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
@@ -294,31 +309,268 @@ static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword) 
     return complete_node(par, node);
 }
 
-static Ast *parse_fn (Parser *par) {
-    Auto node = make_node(par, AstFn);
-    lex_eat_this(lex, TOKEN_FN);
-    try_parse_attributes(cast(Ast*, node)->id,);
+static ArgContext *push_arg_context (Parser *par) {
+    ArgContext *ctx;
+
+    if (par->arg_context_pool.count) {
+        ctx = array_pop(&par->arg_context_pool);
+        ctx->args.count = 0;
+        ctx->polyargs.count = 0;
+    } else {
+        ctx = mem_new(par->mem, ArgContext);
+        array_init(&ctx->args, par->mem);
+        array_init(&ctx->polyargs, par->mem);
+    }
+
+    array_push(&par->arg_context_stack, ctx);
+    return ctx;
+}
+
+static Void pop_arg_context (Parser *par) {
+    ArgContext *ctx = array_pop(&par->arg_context_stack);
+    array_push(&par->arg_context_pool, ctx);
+}
+
+static IString *make_anon_fn_name (Parser *par, U64 file_byte_offset) {
+    IString *f = par->file->path;
+    String s   = astr_fmt(par->mem, "fn:%.*s:0x%lx", STR(*f), file_byte_offset);
+    return intern_str(par->interns, s);
+}
+
+static Ast *make_poly_type_arg (Parser *par, Ast *parent, IString *name) {
+    Auto node = cast(Ast*, make_node(par, AstArgPolyType));
+    node->pos = ast_trimmed_pos(par->interns, parent);
+    String n = astr_fmt(par->mem, "Type(%.*s)", STR(*name));
+    cast(AstArgPolyType*, node)->name = intern_str(par->interns, n);
+    mark_poly_arg_position(par, parent, node);
+    ArgContext *ctx = array_try_get_last(&par->arg_context_stack);
+    if (ctx) array_push(&ctx->polyargs, cast(AstArgPolyType*, node)->name);
+    return node;
+}
+
+static Ast *parse_poly_type (Parser *par, Bool double_dollar_allowed, Bool init_allowed) {
+    Auto node = make_node(par, AstArgPolyType);
+
+    lex_eat_this(lex, '$');
+    if (double_dollar_allowed && lex_try_eat(lex, '$')) node->is_tuple = true;
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
 
-    if (lex_try_eat(lex, '(')) {
-        while (true) {
-            if (! lex_try_peek(lex, TOKEN_IDENT)) break;
-            Ast *arg = parse_var_def(par, false, false);
-            arg->flags |= AST_IS_FN_ARG | AST_IS_LOCAL_VAR;
+    if      (lex_try_eat(lex, ':'))  node->constraint = parse_expression(par, 0);
+    else if (lex_try_peek(lex, '/')) node->constraint = parse_interface(par);
+
+    if (init_allowed && lex_try_eat(lex, '=')) {
+        node->init = parse_expression(par, 0);
+        node->init->flags |= AST_MUST_EVAL;
+    }
+
+    ArgContext *ctx = array_try_get_last(&par->arg_context_stack);
+    if (ctx) array_push(&ctx->polyargs, node->name);
+    return complete_node(par, node);
+}
+
+static Ast *parse_poly_value (Parser *par, ArgContext *ctx) {
+    Auto node = make_node(par, AstArgPolyValue);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '$');
+    if (lex_try_eat(lex, ':')) node->constraint = parse_expression(par, 0);
+    if (lex_try_eat(lex, '=')) { node->init = parse_expression(par, 0); node->init->flags |= AST_MUST_EVAL; }
+    if (!node->constraint && !node->init) node->constraint = make_poly_type_arg(par, cast(Ast*, node), node->name);
+    array_push(&ctx->polyargs, node->name);
+    return complete_node(par, node);
+}
+
+// An AST in standalone position is an expression that won't
+// be matched against other types during semantic analysis:
+//
+//     var x = foo;
+//             ^^^--------- standalone position
+//     var x: Foo = foo;
+//                  ^^^---- not standalone; matched with Foo
+//
+// This info is mainly used to handle untyped literals which
+// can or must infer their type from the expression they are
+// matched against. For example, an anonymous struct literal
+// in standalone position is an error. An array literal in
+// standalone position will infer the array element type
+// from it's first initializer.
+static Void mark_standalone_position (Parser *par, Ast *node) {
+    node->flags |= AST_IN_STANDALONE_POSITION;
+
+    switch (node->tag) {
+    case AST_ARRAY_LITERAL: {
+        AstArrayLiteral *n = cast(AstArrayLiteral*, node);
+        if (! n->lhs) mark_standalone_position(par, array_get(&n->inits, 0));
+    } break;
+    case AST_TUPLE: {
+        ArrayAst *members = &cast(AstTuple*, node)->members;
+        array_iter (f, members) mark_standalone_position(par, f);
+    } break;
+    case AST_OPTION_TYPE: {
+        mark_standalone_position(par, cast(AstBaseUnary*, node)->op);
+    } break;
+    default: break;
+    }
+}
+
+// Recurse down a fn arg constraint and mark positions where
+// it's legal to put a reference or definition to a polyarg
+// with the AST_IN_POLY_ARG_POSITION flag. For example:
+//
+//     fn a ($T, y: Type($R)) {}
+//           ^^----------^^---------- Ok.
+//     fn b { var x: $T; }
+//                   ^^-------------- Error.
+//
+// We also mark trees with the AST_HAS_POLY_ARGS flag if they
+// contain definitions or references of polyargs.
+static Void mark_poly_arg_position (Parser *par, Ast *parent, Ast *node) {
+    if (! node) return;
+
+    switch (node->tag) {
+    case AST_IDENT: {
+        ArgContext *ctx = array_get_last(&par->arg_context_stack);
+        IString *name = cast(AstIdent*, node)->name;
+
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        if (array_has(&ctx->polyargs, name)) { node->flags |= AST_HAS_POLY_ARGS; break; }
+
+        array_iter (arg, &ctx->args) {
+            Bool found = false;
+
+            switch (arg->tag) {
+            #define X(TAG, TYPE) case TAG: found = (name == cast(TYPE*, arg)->name); break;
+                EACH_STATIC_NAME_GENERATOR(X)
+            #undef X
+            default: badpath;
+            }
+
+            if (found && (arg->flags & AST_HAS_POLY_ARGS)) { node->flags |= AST_HAS_POLY_ARGS; break; }
+        }
+    } break;
+    case AST_VAR_DEF: {
+        AstVarDef *n = cast(AstVarDef*, node);
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        mark_poly_arg_position(par, node, n->constraint);
+
+        if (n->init && n->constraint && (n->constraint->flags & AST_HAS_POLY_ARGS)) {
+            // :NoCheckPolyArgInit
+            //
+            // Since the constraint contains polyargs we don't want to typecheck
+            // the initializer at all, since it could be something that is also
+            // polymorphic like an anon struct literal, in which case we would be
+            // matching a polymorph with a polymorph... Instead, we will simply
+            // make copies of the init node for each call site.
+            n->init->flags &= ~AST_MUST_EVAL;
+            n->init->flags |= AST_ADDED_TO_CHECK_LIST;
+        }
+    } break;
+    case AST_ARG_POLY_VALUE: {
+        AstArgPolyValue *n = cast(AstArgPolyValue*, node);
+        node->flags |= (AST_IN_POLY_ARG_POSITION | AST_HAS_POLY_ARGS);
+        mark_poly_arg_position(par, node, n->constraint);
+
+        if (n->init && n->constraint && (n->constraint->flags & AST_HAS_POLY_ARGS)) {
+            // :NoCheckPolyArgInit
+            n->init->flags &= ~AST_MUST_EVAL;
+            n->init->flags |= AST_ADDED_TO_CHECK_LIST;
+        }
+    } break;
+    case AST_ARG_POLY_TYPE:
+        node->flags |= (AST_IN_POLY_ARG_POSITION | AST_HAS_POLY_ARGS);
+        break;
+    case AST_OPTION_TYPE:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        mark_poly_arg_position(par, node, cast(AstBaseUnary*, node)->op);
+        break;
+    case AST_ARRAY_TYPE:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        mark_poly_arg_position(par, node, cast(AstArrayType*, node)->element);
+        break;
+    case AST_DOT:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        mark_poly_arg_position(par, node, cast(AstDot*, node)->lhs);
+        break;
+    case AST_TUPLE:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        array_iter (f, &cast(AstTuple*, node)->members) mark_poly_arg_position(par, node, cast(Ast*, f));
+        break;
+    case AST_CALL:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        array_iter (a, &cast(AstCall*, node)->args) mark_poly_arg_position(par, node, a);
+        break;
+    case AST_FN_TYPE: {
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        AstBaseFn *n = cast(AstBaseFn*, node);
+        array_iter (i, &n->inputs) mark_poly_arg_position(par, node, i);
+        mark_poly_arg_position(par, node, n->output);
+    } break;
+    case AST_TYPEOF:
+        node->flags |= AST_IN_POLY_ARG_POSITION;
+        mark_poly_arg_position(par, node, cast(AstBaseUnary*, node)->op);
+        break;
+    default: break;
+    }
+
+    parent->flags |= (node->flags & AST_HAS_POLY_ARGS);
+}
+
+static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed, Bool code_args_allowed) {
+    ArgContext *ctx = push_arg_context(par);
+    if (! lex_try_eat(lex, '(')) return ctx;
+
+    while (true) {
+        Ast *arg = 0;
+        TokenTag tok = lex_peek(lex)->tag;
+
+        if (tok == '$') {
+            arg = parse_poly_type(par, true, true);
+        } else if (tok != TOKEN_IDENT) {
+            break;
+        } else if (lex_try_peek_nth(lex, 2, '$')) {
+            arg = parse_poly_value(par, ctx);
+        } else {
+            arg = parse_var_def(par, false, false);
             if (cast(AstVarDef*, arg)->init) cast(AstVarDef*, arg)->init->flags |= AST_MUST_EVAL;
-            array_push(&cast(AstBaseFn*, node)->inputs, arg);
-            if (! lex_try_eat(lex, ',')) break;
+            if (! runtime_args_allowed) par_error_pos(par, arg->pos, "Runtime arguments not allowed here.");
         }
 
-        lex_eat_this(lex, ')');
+        array_push(&ctx->args, arg);
+        if (! lex_try_eat(lex, ',')) break;
     }
 
-    if (lex_try_eat(lex, TOKEN_ARROW)) {
-        cast(AstBaseFn*, node)->output = parse_expression_before_brace(par);
+    lex_eat_this(lex, ')');
+    return ctx;
+}
+
+static Ast *parse_fn (Parser *par, Bool as_expression) {
+    AstId id = ast_next_id();
+    SrcPos start = lex_peek(lex)->pos;
+    AstFlags is_macro = (lex_eat(lex)->tag == TOKEN_MACRO) ? AST_IS_MACRO : 0;
+
+    try_parse_attributes(id,);
+
+    IString *name = as_expression ? 0 : lex_eat_this(lex, TOKEN_IDENT)->str;
+    if (! name) name = make_anon_fn_name(par, start.offset);
+
+    ArgContext *ctx = parse_args(par, true, is_macro);
+
+    Auto node = cast(AstBaseFn*, ast_alloc_id(par->mem, (ctx->polyargs.count ? AST_FN_POLY : AST_FN), is_macro, id));
+    cast(Ast*, node)->pos = start;
+    if (lex_try_eat(lex, TOKEN_ARROW)) node->output = parse_expression_before_brace(par);
+
+    if (ctx->polyargs.count) {
+        AstFnPoly *n = cast(AstFnPoly*, node);
+        n->name = name;
+        parse_block_out(par, &n->statements);
+        array_iter (arg, &ctx->args) mark_poly_arg_position(par, cast(Ast*, node), arg);
+    } else {
+        AstFn *n = cast(AstFn*, node);
+        n->name = name;
+        parse_block_out(par, &n->statements);
     }
 
-    parse_block_out(par, &node->statements);
-
+    swap(node->inputs, ctx->args);
+    pop_arg_context(par);
     return complete_node(par, node);
 }
 
@@ -683,7 +935,7 @@ static Ast *parse_expression_without_lhs (Parser *par) {
     case TOKEN_NIL:            return parse_nil(par);
     case TOKEN_F64_LITERAL:    return parse_float_literal(par);
     case TOKEN_FALSE:          return parse_bool_literal(par, TOKEN_FALSE);
-    case TOKEN_FN:             return parse_fn(par);
+    case TOKEN_FN:             return parse_fn(par, true);
     case TOKEN_FN_TYPE:        return parse_fn_type(par);
     case TOKEN_STRING_LITERAL: return parse_string_literal(par);
     case TOKEN_TRUE:           return parse_bool_literal(par, TOKEN_TRUE);
@@ -912,7 +1164,7 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_BREAK:    result = parse_break(par); break;
     case TOKEN_CONTINUE: result = parse_continue(par); break;
     case TOKEN_DEFER:    result = parse_defer(par); break;
-    case TOKEN_FN:       result = parse_fn(par); break;
+    case TOKEN_FN:       result = parse_fn(par, false); break;
     case TOKEN_RETURN:   result = parse_return(par); break;
     case TOKEN_ENUM:     result = parse_enum(par); break;
     case TOKEN_RECORD:   result = parse_record(par); break;
@@ -946,7 +1198,7 @@ static Ast *parse_top_statement (Parser *par) {
     case ';':          while (lex_try_eat(lex, ';')); return parse_top_statement(par);
     case TOKEN_ENUM:   return parse_enum(par); break;
     case TOKEN_RECORD: return parse_record(par); break;
-    case TOKEN_FN:     return parse_fn(par); break;
+    case TOKEN_FN:     return parse_fn(par, false); break;
     case TOKEN_TYPE:   return starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
     case TOKEN_VAR: {
        Ast *result = parse_var_def(par, true, true);
@@ -982,6 +1234,8 @@ Parser *par_new (Mem *mem, Interns *interns) {
     par->mem = mem;
     par->interns = interns;
     par->lexer = lex_new(interns, mem);
+    array_init(&par->arg_context_pool, mem);
+    array_init(&par->arg_context_stack, mem);
     map_init(&par->notes, mem);
     return par;
 }
