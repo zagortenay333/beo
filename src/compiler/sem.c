@@ -414,6 +414,7 @@ static Result eval (Sem *sem, Ast *node) {
             val = vm_transfer_result(sem->vm, vm);
             vm_destroy(vm);
         } else {
+            vm_destroy(vm);
             return error_n(sem, node, "Unable to compile-time eval expression.");
         }
     }

@@ -24,10 +24,11 @@ istruct (Emitter) {
     U16 next_reg;
     AstFn *fn;
     Ast *debug_node;
-    Map(AstId, VmRegOp) binds;
     Array(Defer) defers;
     Array(BreakPatch) break_patches;
     Array(ContinuePatch) continue_patches;
+    Map(AstId, VmRegOp) binds;
+    Map(String, U32) str_to_const_idx;
 };
 
 static VmObjRecord *get_ffi (Vm *vm, String name);
@@ -165,14 +166,21 @@ static Void emit_const (Emitter *em, VmRegOp result, VmReg val) {
     emit_bytes(em, VM_OP_CONST_GET, result, ENCODE_U32(idx));
 }
 
-// @todo We should deduplicate string literals...
 static VmRegOp emit_const_string (Emitter *em, String str, VmRegOp result) {
-    // String literal VmObj's are not allocated using
-    // the gc since we never want them to be freed.
-    Auto o = mem_new(em->vm->mem, VmObjString);
-    o->base.tag = VM_OBJ_STRING;
-    o->string = str;
-    emit_const(em, result, (VmReg){ .tag=VM_REG_OBJ, .obj=&o->base });
+    U32 idx; Bool found = map_get(&em->str_to_const_idx, str, &idx);
+
+    if (found) {
+        emit_bytes(em, VM_OP_CONST_GET, result, ENCODE_U32(idx));
+    } else {
+        // String literal VmObj's are not allocated using
+        // the gc since we never want them to be freed.
+        Auto o = mem_new(em->vm->mem, VmObjString);
+        o->base.tag = VM_OBJ_STRING;
+        o->string = str;
+        map_add(&em->str_to_const_idx, str, em->vm->constants.count);
+        emit_const(em, result, (VmReg){ .tag=VM_REG_OBJ, .obj=&o->base });
+    }
+
     return result;
 }
 
@@ -664,10 +672,11 @@ static Void emit_fn_bytecode (Vm *vm, AstFn *ast) {
     em.mem = tm;
     em.fn = ast;
     em.vm = vm;
-    map_init(&em.binds, tm);
     array_init(&em.defers, tm);
     array_init(&em.break_patches, tm);
     array_init(&em.continue_patches, tm);
+    map_init(&em.binds, tm);
+    map_init(&em.str_to_const_idx, tm);
 
     reg_push(&em); // First register contains the return value.
     reg_push(&em); // Second register contains callee fn pointer.
