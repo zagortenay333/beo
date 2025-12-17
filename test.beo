@@ -9,6 +9,8 @@
 // not in standalone position as having a variable type.
 
 fn main {
+    fn foo (x: []$T, y: T) {
+    }
 }
 
 /*

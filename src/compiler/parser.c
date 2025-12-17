@@ -31,6 +31,7 @@ static Void parse_block_out (Parser *par, ArrayAst *);
 static Ast *parse_expression (Parser *par, U64 left_op);
 static Ast *parse_expression_before_brace (Parser *par);
 static Ast *try_parse_expression (Parser *par, U64 left_op);
+static Void mark_standalone_position (Parser *par, Ast *node);
 static Void try_parse_expression_list (Parser *par, ArrayAst *out);
 static Void mark_poly_arg_position (Parser *par, Ast *parent, Ast *node);
 static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword);
@@ -305,6 +306,7 @@ static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword) 
     if (lex_try_eat(lex, '=')) node->init = parse_expression(par, 0);
     if (!node->constraint && !node->init) lex_eat_this(lex, ':');
     if (with_semicolon) lex_eat_this(lex, ';');
+    if (! node->constraint) mark_standalone_position(par, node->init);
 
     return complete_node(par, node);
 }
@@ -348,11 +350,10 @@ static Ast *make_poly_type_arg (Parser *par, Ast *parent, IString *name) {
     return node;
 }
 
-static Ast *parse_poly_type (Parser *par, Bool double_dollar_allowed, Bool init_allowed) {
+static Ast *parse_poly_type (Parser *par, Bool init_allowed) {
     Auto node = make_node(par, AstArgPolyType);
 
     lex_eat_this(lex, '$');
-    if (double_dollar_allowed && lex_try_eat(lex, '$')) node->is_tuple = true;
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
 
     if      (lex_try_eat(lex, ':'))  node->constraint = parse_expression(par, 0);
@@ -523,7 +524,7 @@ static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed, Bool code
         TokenTag tok = lex_peek(lex)->tag;
 
         if (tok == '$') {
-            arg = parse_poly_type(par, true, true);
+            arg = parse_poly_type(par, true);
         } else if (tok != TOKEN_IDENT) {
             break;
         } else if (lex_try_peek_nth(lex, 2, '$')) {
@@ -638,6 +639,7 @@ static Ast *parse_array_literal_or_index (Parser *par, Ast *lhs) {
         cast(Ast*, node)->pos = start;
         node->lhs = lhs;
         node->idx = expr;
+        mark_standalone_position(par, lhs);
         lex_eat_this(lex, ']');
         return complete_node(par, node);
     }
@@ -782,6 +784,7 @@ static Ast *parse_dot (Parser *par, Ast *lhs) {
     node->lhs = lhs;
     lex_eat_this(lex, '.');
     node->rhs = lex_eat_this(lex, TOKEN_IDENT)->str;
+    mark_standalone_position(par, lhs);
     return complete_node(par, node);
 }
 
@@ -897,6 +900,7 @@ static Ast *parse_typeof (Parser *par) {
     lex_eat_this(lex, '(');
     cast(AstBaseUnary*, node)->op = parse_expression(par, 0);
     lex_eat_this(lex, ')');
+    mark_standalone_position(par, cast(AstBaseUnary*, node)->op);
     return complete_node(par, node);
 }
 
@@ -927,6 +931,7 @@ static Ast *parse_expression_without_lhs (Parser *par) {
     switch (lex_peek(lex)->tag) {
     case '?':                  return parse_option_type(par);
     case '-':                  return parse_negate(par);
+    case '$':                  return parse_poly_type(par, false);
     case '(':                  return parse_tuple_or_parens(par);
     case '[':                  return parse_array_literal_or_type(par);
     case '!':                  return parse_prefix_op(par, AST_NOT);
@@ -1190,24 +1195,29 @@ static Ast *parse_statement (Parser *par) {
     } break;
     }
 
+    mark_standalone_position(par, result);
     return result;
 }
 
 static Ast *parse_top_statement (Parser *par) {
+    Ast *result = 0;
+
     switch (lex_peek(lex)->tag) {
-    case ';':          while (lex_try_eat(lex, ';')); return parse_top_statement(par);
-    case TOKEN_ENUM:   return parse_enum(par); break;
-    case TOKEN_RECORD: return parse_record(par); break;
-    case TOKEN_FN:     return parse_fn(par, false); break;
-    case TOKEN_TYPE:   return starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
+    case ';':          while (lex_try_eat(lex, ';')); result = parse_top_statement(par); break;
+    case TOKEN_ENUM:   result = parse_enum(par); break;
+    case TOKEN_RECORD: result = parse_record(par); break;
+    case TOKEN_FN:     result = parse_fn(par, false); break;
+    case TOKEN_TYPE:   result = starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
     case TOKEN_VAR: {
-       Ast *result = parse_var_def(par, true, true);
+       result = parse_var_def(par, true, true);
        result->flags |= AST_IS_GLOBAL_VAR;
        cast(AstVarDef*, result)->init->flags |= AST_MUST_EVAL;
-       return result;
-    }
+    } break;
     default: return 0;
     }
+
+    mark_standalone_position(par, result);
+    return result;
 }
 
 AstFile *par_parse_file (Parser *par, IString *filepath) {

@@ -2,6 +2,28 @@
 #include "compiler/vm.h"
 #include "compiler/parser.h"
 
+istruct (PolyInfo) {
+    U64 mark;
+    Ast *node;
+    ArrayAst *args;
+    ArrayAst polyargs;
+    ArrayAst instances;
+};
+
+istruct (MonoInfo);
+istruct (ValueInstance) { TypeVar *var; Ast **val; Ast *instance; };
+istruct (TypeInstance)  { TypeVar *var; Type *t; Ast *instance; MonoInfo *i; };
+
+istruct (MonoInfo) {
+    U64 depth;
+    Ast *instantiator;
+    PolyInfo *poly_info;
+    SliceAst arg_instances; // Parallel to poly_info->args.
+    Array(TypeInstance) type_map;
+    Array(ValueInstance) value_map;
+    Array(struct { Ast *oldn; Ast *newn; }) instance_map;
+};
+
 ienum (Result, U8) {
     RESULT_OK,
     RESULT_DEFER,
@@ -26,12 +48,12 @@ istruct (Sem) {
     Vm *vm;
     Parser *parser;
     Interns *interns;
+    SemCoreTypes core_types;
 
     AstFn *main_fn;
     ArrayAstFn fns;
     ArrayType types;
     ArrayAst globals;
-    Map(AstId, VmReg) global_to_reg;
 
     Scope *autoimports;
     Map(IString*, AstFile*) files;
@@ -42,9 +64,12 @@ istruct (Sem) {
     U64 error_count;
     U64 next_type_id;
     Bool found_a_sem_edge;
-    Map(TypeId, Ast*) type_def;
+    PolyInfo *poly_info;
 
-    SemCoreTypes core_types;
+    Map(TypeId, Ast*) type_def;
+    Map(AstId, VmReg) global_to_reg;
+    Map(AstId, MonoInfo*) mono_infos;
+    Map(AstId, PolyInfo*) poly_infos;
 
     struct { // Info about ongoing match().
         U64 ongoing;
@@ -131,6 +156,16 @@ static Void sem_panic (Sem *sem) {
     RESULT_OK;\
 })
 
+inl Bool is_tvar (Type *t)             { return (t->tag == TYPE_VAR) || (t->flags & TYPE_IS_UNTYPED_LIT); }
+inl Bool is_tvar_fn (Type *t)          { return (t->flags & TYPE_IS_TVAR_FN); }
+inl Bool is_tvar_dot (Type *t)         { return (t->tag == TYPE_VAR) && (cast(TypeVar*, t)->node->tag == AST_DOT); }
+inl Bool is_tvar_call (Type *t)        { return (t->tag == TYPE_VAR) && (cast(TypeVar*, t)->node->tag == AST_CALL); }
+inl Bool is_tvar_type (Type *t)        { return (t->tag == TYPE_VAR) && (cast(TypeVar*, t)->node->tag == AST_ARG_POLY_TYPE); }
+inl Bool is_tvar_value (Type *t)       { return (t->tag == TYPE_VAR) && (cast(TypeVar*, t)->node->tag == AST_ARG_POLY_VALUE); }
+inl Bool is_tvar_array_lit (Type *t)   { return (t->tag == TYPE_ARRAY) && (t->flags & TYPE_IS_UNTYPED_LIT); }
+inl Bool is_tvar_tuple_lit (Type *t)   { return (t->tag == TYPE_TUPLE) && (t->flags & TYPE_IS_UNTYPED_LIT); }
+inl Bool is_tvar_untyped_lit (Type *t) { return (t->flags & TYPE_IS_UNTYPED_LIT); }
+
 static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     AstFile *file = map_get_ptr(&sem->files, path);
     if (file) return file;
@@ -170,8 +205,10 @@ static IString *get_name (Ast *node) {
 
 static Ast *get_init (Ast *node) {
     switch (node->tag) {
-    case AST_VAR_DEF: return cast(AstVarDef*, node)->init;
-    default:          return 0;
+    case AST_VAR_DEF:        return cast(AstVarDef*, node)->init;
+    case AST_ARG_POLY_TYPE:  return cast(AstArgPolyType*, node)->init;
+    case AST_ARG_POLY_VALUE: return cast(AstArgPolyValue*, node)->init;
+    default:                 return 0;
     }
 }
 
@@ -227,14 +264,18 @@ static Result can_eval (Sem *sem, Ast *node) {
         case TYPE_VOID: break;
         case TYPE_ENUM: break;
 
+        case TYPE_FN:
+        case TYPE_FFI:
+        case TYPE_TOP:
+        case TYPE_VAR:
+        case TYPE_MISC: {
+            result = RESULT_ERROR;
+        } break;
+
         case TYPE_OPTION: {
             t = cast(TypeOption*, t)->underlying;
             goto again;
         }
-
-        case TYPE_FN: {
-            result = RESULT_ERROR;
-        } break;
 
         case TYPE_ARRAY: {
             Type *elem = cast(TypeArray*, t)->element;
@@ -260,11 +301,6 @@ static Result can_eval (Sem *sem, Ast *node) {
                 }
             }
         } break;
-
-        case TYPE_FFI:
-        case TYPE_TOP:
-            result = RESULT_ERROR;
-            break;
         }
     }
 
@@ -434,6 +470,19 @@ static Type *alloc_type (Sem *sem, TypeTag tag) {
     return type;
 }
 
+static Type *alloc_type_var (Sem *sem, Ast *n, TypeFlags f) {
+    Auto *t = cast(TypeVar*, alloc_type(sem, TYPE_VAR));
+    t->node = n;
+    cast(Type*, t)->flags |= f;
+    return cast(Type*, t);
+}
+
+static Type *alloc_type_misc (Sem *sem, Ast *n) {
+    Auto t = cast(TypeMisc*, alloc_type(sem, TYPE_MISC));
+    t->node = n;
+    return cast(Type*, t);
+}
+
 static Type *alloc_type_option (Sem *sem, Type *underlying) {
     Auto t = cast(TypeOption*, alloc_type(sem, TYPE_OPTION));
     t->underlying = underlying;
@@ -584,6 +633,34 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
     case TYPE_FLOAT:  astr_push_cstr(astr, "Float"); break;
     case TYPE_INT:    astr_push_cstr(astr, "Int"); break;
     case TYPE_STRING: astr_push_cstr(astr, "String"); break;
+
+    case TYPE_VAR: {
+        Ast *n = cast(TypeVar*, type)->node;
+
+        if (n->tag == AST_FN_POLY) {
+            IString *name = cast(AstFnPoly*, n)->name;
+            astr_push_fmt(astr, "%.*s", STR(*name));
+        } else if (n->tag == AST_CALL) {
+            IString *name = get_name(cast(AstCall*, n)->sem_edge);
+            astr_push_fmt(astr, "%.*s(", STR(*name));
+            array_iter (arg, &cast(AstCall*, n)->args) {
+                log_type(sem, astr, get_type(arg));
+                if (! ARRAY_ITER_DONE) astr_push_cstr(astr, ", ");
+            }
+            astr_push_byte(astr, ')');
+        } else if (is_tvar_type(type)) {
+            IString *name = get_name(cast(TypeVar*, type)->node);
+            astr_push_fmt(astr, "$%.*s", STR(*name));
+        } else {
+            astr_push_cstr(astr, "$");
+        }
+    } break;
+
+    case TYPE_MISC: {
+        astr_push_cstr(astr, "Type(");
+        astr_push_cstr(astr, ast_tag_to_cstr[cast(TypeMisc*, type)->node->tag]);
+        astr_push_byte(astr, ')');
+    } break;
 
     case TYPE_ENUM: {
         IString *name = cast(TypeRecord*, type)->node->name;
@@ -773,6 +850,19 @@ static Result error_match (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
 
     sem->error_count++;
     return RESULT_ERROR;
+}
+
+static PolyInfo *alloc_poly_info (Sem *sem, Ast *polymorph) {
+    PolyInfo *info = mem_new(sem->mem, PolyInfo);
+
+    assert_dbg(ast_get_base_flags[polymorph->tag] & AST_BASE_FN);
+    info->args = &cast(AstBaseFn*, polymorph)->inputs;
+
+    info->node = polymorph;
+    array_init(&info->polyargs, sem->mem);
+    array_init(&info->instances, sem->mem);
+    map_add(&sem->poly_infos, polymorph->id, info);
+    return info;
 }
 
 static Void implicit_cast (Sem *sem, Ast **pn, Type *to_type) {
@@ -1083,7 +1173,16 @@ static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_arg
         Ast *n    = ast_alloc(sem->mem, AST_CALL_DEFAULT_ARG, 0);
         n->pos    = caller->pos;
         n->flags |= (def->flags & AST_IS_TYPE);
-        cast(AstCallDefaultArg*, n)->arg = init;
+
+        if (init->flags & AST_MUST_EVAL) {
+            cast(AstCallDefaultArg*, n)->arg = init;
+        } else {
+            // :NoCheckPolyArgInit
+            Ast *arg = ast_deep_copy(sem->mem, init, 0, 0);
+            arg->flags |= AST_MUST_EVAL;
+            cast(AstCallDefaultArg*, n)->arg = arg;
+            add_to_check_list(sem, arg, get_scope(def));
+        }
 
         add_to_check_list(sem, n, get_scope(caller));
         array_set(call_args, ARRAY_IDX, n);
@@ -1537,6 +1636,62 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_ARG_POLY_VALUE: {
+        Auto n = cast(AstArgPolyValue*, node);
+
+        if (n->init && n->constraint) {
+            try_get_type_t(n->constraint);
+            if (! (n->constraint->flags & AST_HAS_POLY_ARGS)) try(match_nv(sem, n->constraint, &n->init));
+        } else if (n->init) {
+            Type *t = try_get_type_v(n->init);
+            if (t->flags & TYPE_IS_SPECIAL) return error_nt(sem, n->init, t, "expected a concrete type.");
+            // @todo Why are we allocating a dummy node here?
+            n->constraint = ast_alloc(sem->mem, AST_DUMMY, AST_IS_TYPE);
+            n->constraint->pos = ast_trimmed_pos(sem->interns, node);
+            add_to_check_list(sem, n->constraint, get_scope(node));
+            set_type(n->constraint, t);
+        }
+
+        set_type(node, alloc_type_var(sem, node, 0));
+        return RESULT_OK;
+    }
+
+    case AST_ARG_POLY_TYPE: {
+        Auto n = cast(AstArgPolyType*, node);
+        if (! (node->flags & AST_IN_POLY_ARG_POSITION)) return error_n(sem, node, "Poly type definition in invalid position.");
+        if (n->init) try_get_type_t(n->init);
+        set_type(node, alloc_type_var(sem, node, 0));
+        return RESULT_OK;
+    }
+
+    case AST_FN_POLY: {
+        Auto n = cast(AstBaseFn*, node);
+        Type *t = get_type(node);
+
+        if (! t) {
+            array_iter (a, &n->inputs) {
+                Ast *init = get_init(a);
+
+                // Note we must check whether the AST_MUST_EVAL
+                // flag is set because of :NoCheckPolyArgInit.
+                if (init && (init->flags & AST_MUST_EVAL) && !(init->flags & AST_EVALED)) return RESULT_DEFER;
+            }
+
+            if (n->output) try_get_type_t(n->output);
+
+            if (node->flags & AST_IN_STANDALONE_POSITION) {
+                set_type(node, alloc_type_misc(sem, node));
+                return RESULT_OK;
+            } else {
+                set_type(node, alloc_type_var(sem, node, TYPE_IS_TVAR_FN));
+                U64 i = array_find(&n->inputs, (IT->tag == AST_ARG_POLY_TYPE) || (IT->tag == AST_ARG_POLY_VALUE));
+                return (i == ARRAY_NIL_IDX) ? RESULT_DEFER : error_n(sem, node, "Polymorphic functions with comptime arguments cannot be assigned.");
+            }
+        }
+
+        return (t->tag == TYPE_VAR) ? RESULT_DEFER : RESULT_OK;
+    }
+
     case AST_FN: {
         Auto n = cast(AstBaseFn*, node);
         if (n->output) try_get_type_t(n->output);
@@ -1681,9 +1836,18 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
     if (n->flags & AST_CREATES_SCOPE) scope = scope_new(sem, scope, n);
     if ((n->flags & AST_MUST_EVAL) && !(n->flags & AST_EVALED)) array_push(&sem->eval_list, n);
 
-    #define V(child, ...) add_to_check_list(sem, child, scope);
-    AST_VISIT_CHILDREN(n, V);
-    #undef V
+    if (n->tag == AST_FN_POLY) {
+        PolyInfo *prev = sem->poly_info;
+        sem->poly_info = alloc_poly_info(sem, n);
+        array_iter (arg, sem->poly_info->args) add_to_check_list(sem, arg, scope);
+        if (ast_get_base_flags[n->tag] & AST_BASE_FN) add_to_check_list(sem, cast(AstBaseFn*, n)->output, scope);
+        sem->poly_info = prev;
+    } else {
+        #define V(child, ...) add_to_check_list(sem, child, scope);
+        AST_VISIT_CHILDREN(n, V);
+        #undef V
+        if ((n->tag == AST_ARG_POLY_TYPE) || (n->tag == AST_ARG_POLY_VALUE)) array_push(&sem->poly_info->polyargs, n);
+    }
 
     if ((n->flags & AST_CREATES_SCOPE)) scope_seal(sem, scope);
     array_push(&sem->check_list, n);
@@ -1770,6 +1934,8 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     map_init(&sem->files, mem);
     map_init(&sem->type_def, mem);
     map_init(&sem->global_to_reg, mem);
+    map_init(&sem->poly_infos, mem);
+    map_init(&sem->mono_infos, mem);
 
     { // Init autoimports scope:
         Ast *owner = ast_alloc(mem, AST_DUMMY, AST_CREATES_SCOPE);

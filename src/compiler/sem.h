@@ -17,18 +17,22 @@ istruct (Sem);
     X(TYPE_FLOAT, TypeFloat, TYPE_IS_PRIMITIVE)\
     X(TYPE_FN, TypeFn, 0)\
     X(TYPE_INT, TypeInt, TYPE_IS_PRIMITIVE)\
+    X(TYPE_MISC, TypeMisc, TYPE_IS_SPECIAL)\
     X(TYPE_OPTION, TypeOption, 0)\
     X(TYPE_RECORD, TypeRecord, 0)\
     X(TYPE_STRING, TypeString, 0)\
     X(TYPE_TOP, TypeTop, TYPE_IS_SPECIAL)\
     X(TYPE_TUPLE, TypeTuple, 0)\
+    X(TYPE_VAR, TypeVar, TYPE_IS_SPECIAL)\
     X(TYPE_VOID, TypeVoid, TYPE_IS_SPECIAL)
 
 fenum (TypeFlags, U16) {
-    TYPE_VISITED       = flag(0),
-    TYPE_IS_DISTINCT   = flag(1),
-    TYPE_IS_SPECIAL    = flag(2),
-    TYPE_IS_PRIMITIVE  = flag(3),
+    TYPE_VISITED        = flag(0),
+    TYPE_IS_DISTINCT    = flag(1),
+    TYPE_IS_PRIMITIVE   = flag(2),
+    TYPE_IS_TVAR_FN     = flag(3),
+    TYPE_IS_SPECIAL     = flag(4),
+    TYPE_IS_UNTYPED_LIT = flag(5),
 };
 
 ienum (TypeTag, U8) {
@@ -47,11 +51,13 @@ istruct (TypeFfi)     { Type type; String name; VmObjRecord *obj; };
 istruct (TypeFloat)   { Type type; };
 istruct (TypeFn)      { Type type; AstBaseFn *node; };
 istruct (TypeInt)     { Type type; };
+istruct (TypeMisc)    { Type type; Ast *node; };
 istruct (TypeOption)  { Type type; Type *underlying; };
 istruct (TypeRecord)  { Type type; AstRecord *node; };
 istruct (TypeString)  { Type type; };
 istruct (TypeTop)     { Type type; };
 istruct (TypeTuple)   { Type type; AstTuple *node; };
+istruct (TypeVar)     { Type type; Ast *node; };
 istruct (TypeVoid)    { Type type; };
 
 array_typedef(Type*, Type);

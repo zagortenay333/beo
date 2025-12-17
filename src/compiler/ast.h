@@ -26,7 +26,6 @@ istruct (Interns);
 #define EACH_AST_NODE(X)\
     X(AST_ADD, AstAdd, AST_BASE_BINARY, 0)\
     X(AST_ARRAY_LITERAL, AstArrayLiteral, 0, AST_IS_LITERAL)\
-    X(AST_ARG_POLY_CODE, AstArgPolyCode, 0, 0)\
     X(AST_ARG_POLY_TYPE, AstArgPolyType, 0, AST_IS_TYPE | AST_HAS_POLY_ARGS)\
     X(AST_ARG_POLY_VALUE, AstArgPolyValue, 0, AST_HAS_POLY_ARGS)\
     X(AST_ARRAY_TYPE, AstArrayType, 0, AST_IS_TYPE)\
@@ -96,7 +95,6 @@ istruct (Interns);
 // to scopes before any code generators have run.
 // They must have an "IString *name" field.
 #define EACH_STATIC_NAME_GENERATOR(X)\
-    X(AST_ARG_POLY_CODE, AstArgPolyCode)\
     X(AST_ARG_POLY_TYPE, AstArgPolyType)\
     X(AST_ARG_POLY_VALUE, AstArgPolyValue)\
     X(AST_ENUM, AstEnum)\
@@ -186,7 +184,6 @@ istruct (AstBaseFn)            { Ast base; ArrayAst inputs; Ast *output; };
 istruct (AstBaseUnary)         { Ast base; Ast *op; };
 
 istruct (AstAdd)               { AstBaseBinary base; };
-istruct (AstArgPolyCode)       { Ast base; IString *name; Ast *constraint, *init; U64 n; };
 istruct (AstArgPolyType)       { Ast base; IString *name; Ast *constraint, *init; Bool is_tuple; };
 istruct (AstArgPolyValue)      { Ast base; IString *name; Ast *constraint, *init; };
 istruct (AstArrayLiteral)      { Ast base; Ast *lhs; ArrayAst inits; };
@@ -331,7 +328,6 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     if (_(f) & AST_BASE_FN)     { AM(A, I, AstBaseFn, inputs); FM(F, AstBaseFn, output); }\
     \
     switch (NODE->tag) {\
-    case AST_ARG_POLY_CODE:    FM(F, AstArgPolyCode, constraint); FM(F, AstArgPolyCode, init); break;\
     case AST_ARG_POLY_TYPE:    FM(F, AstArgPolyType, constraint); FM(F, AstArgPolyType, init); break;\
     case AST_ARG_POLY_VALUE:   FM(F, AstArgPolyValue, constraint); FM(F, AstArgPolyValue, init); break;\
     case AST_ARRAY_LITERAL:    FM(F, AstArrayLiteral, lhs); AM(A, I, AstArrayLiteral, inits); break;\
