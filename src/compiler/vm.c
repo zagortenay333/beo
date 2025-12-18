@@ -299,13 +299,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
         array_iter (init, &n->inits) {
             VmRegOp init_reg = emit_expression(em, init->val, -1);
-
             VmRegOp key_reg = reg_push(em);
             emit_const_string(em, *init->name, key_reg);
-
             emit_bytes(em, VM_OP_RECORD_SET, result_reg, key_reg, init_reg);
-
-            reg_pop(em);
             reg_pop(em);
         }
     } break;
@@ -353,7 +349,6 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
             emit_bytes(em, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
             reg_pop(em);
-            reg_pop(em);
         } else if (t->tag == TYPE_ENUM) {
             VmReg reg = sem_get_const_val(sem, n->sem_edge);
             assert_dbg(reg.tag == VM_REG_INT);
@@ -391,8 +386,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             em->next_reg = result + 1;
         }
 
-        result_reg = result;
-    } break;
+        em->debug_node = prev_debug_node;
+        return result;
+    }
 
     case AST_FN: {
         U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, expr));
@@ -418,7 +414,8 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
 
             if (pref == -1) {
                 em->next_reg = result_reg;
-                result_reg = reg;
+                em->debug_node = prev_debug_node;
+                return reg;
             } else {
                 emit_move(em, result_reg, reg);
             }
@@ -659,7 +656,16 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
 
     default: {
         emit_expression(em, stmt, -1);
-        reg_pop(em);
+
+        if ((stmt->tag != AST_IDENT) && (stmt->tag != AST_CALL)) {
+            // When calling emit_expression() with pref=-1, upon return
+            // the value of the expression is in a freshly allocated
+            // register which we can now pop since this is an expression
+            // statement. The exception to this are the nodes AST_IDENT
+            // and AST_CALL which do some weird handling even when pref=-1.
+            // For those two we don't bother resetting anything.
+            reg_pop(em);
+        }
     } break;
     }
 

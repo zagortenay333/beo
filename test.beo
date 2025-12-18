@@ -1,4 +1,18 @@
 fn main {
+        record Foo  {
+            x: Int;
+        }
+
+        var x = Foo{ x = 4 };
+
+        fn foo (x: Foo, y: Float) {
+            .print(x.x);
+            .print(y);
+        }
+
+        foo(x, 42.0);
+
+    /*
     {
         fn add (x: []$T, y: T) {
             .print(x);
@@ -27,6 +41,7 @@ fn main {
 
         foo(x, Float, 42.0);
     }
+    */
 }
 
 /*

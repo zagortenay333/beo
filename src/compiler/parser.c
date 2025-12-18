@@ -558,6 +558,7 @@ static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed) {
             arg = parse_poly_value(par, ctx);
         } else {
             arg = parse_var_def(par, false, false);
+            arg->flags |= (AST_IS_LOCAL_VAR | AST_IS_FN_ARG);
             if (cast(AstVarDef*, arg)->init) cast(AstVarDef*, arg)->init->flags |= AST_MUST_EVAL;
             if (! runtime_args_allowed) par_error_pos(par, arg->pos, "Runtime arguments not allowed here.");
         }
