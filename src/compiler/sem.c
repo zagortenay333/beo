@@ -1107,6 +1107,56 @@ static Void bind_simple_untyped_lit_recursively (Sem *sem, Type *t) {
     }
 }
 
+// This is a type variable assigned to a struct call whose
+// arguments contain type variables:
+//
+//     struct Foo ($T) {}
+//
+//     fn foo (x: Foo($T)) {}
+//                ^^^^^^^------ tvar_call
+//
+// Instead of instantiating a struct with type vars, we assign
+// a type variable to the invocation itself and match against
+// it structurally.
+static Result match_tvar_call (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar_call(t1));
+    assert_dbg(cast(TypeVar*, t1)->node->tag == AST_CALL);
+
+    Ast *n2 = *pn2;
+    AstCall *call = cast(AstCall*, cast(TypeVar*, t1)->node);
+    Ast *target = get_target(call->lhs);
+
+    if (is_tvar_call(t2)) {
+        AstCall *call2 = cast(AstCall*, cast(TypeVar*, t2)->node);
+        if (target != get_target(call2->lhs)) return ERROR_MATCH();
+
+        array_iter (a, &call->args, *) {
+            Ast **b = array_ref(&call2->args, ARRAY_IDX);
+            match_nn(sem, *a, *b);
+        }
+
+        return RESULT_OK;
+    }
+
+    if (t2->tag == TYPE_RECORD) {
+        Ast *poly = get_target(call->lhs);
+        MonoInfo *info = sem_get_mono_info(sem, cast(Ast*, cast(TypeRecord*, t2)->node));
+        ArrayAst *args = &cast(AstCall*, info->instantiator)->args;
+
+        if (!info || (info->poly_info->node != poly)) return ERROR_MATCH();
+
+        array_iter (a, &call->args, *) {
+            Ast **b = array_ref(args, ARRAY_IDX);
+            match_nn(sem, *a, *b);
+        }
+
+        return RESULT_OK;
+    }
+
+    return ERROR_MATCH();
+}
+
 // Match a polymorphic function to the variable it is
 // being assigned to via the assignment operator or
 // by being passed as argument to a fn:
@@ -1271,6 +1321,8 @@ static Result match_tvar (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Su
     if (is_tvar_type(t2))             RETURN_S(match_tvar_type(sem, n2, n1, t2, t1));
     if (is_tvar_array_lit(t2))        RETURN(match_tvar_array_lit(sem, n1, pn2, t1, t2));
     if (is_tvar_array_lit(t1))        RETURN_S(match_tvar_array_lit(sem, n2, pn1, t2, t1));
+    if (is_tvar_call(t1))             RETURN(match_tvar_call(sem, n1, pn2, t1, t2));
+    if (is_tvar_call(t2))             RETURN_S(match_tvar_call(sem, n2, pn1, t2, t1));
     if (is_tvar_tuple_lit(t2))        RETURN(match_tvar_tuple_lit(sem, n1, pn2, t1, t2));
     if (is_tvar_tuple_lit(t1))        RETURN_S(match_tvar_tuple_lit(sem, n2, pn1, t2, t1));
     if (is_tvar_fn(t1))               RETURN(match_tvar_fn(sem, n1, n2, t1, t2));
@@ -2186,7 +2238,7 @@ static Result check_node (Sem *sem, Ast *node) {
         }
 
         map_iter (slot, &s->map) {
-            if (slot->val->tag != AST_VAR_DEF) continue;
+            if (slot->val->tag != AST_VAR_DEF) continue; // If it's a poly instance skip the arg instances.
 
             Auto def = cast(AstVarDef*, slot->val);
             U64 idx  = array_find(&n->inits, IT->name == slot->key);
