@@ -232,6 +232,10 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     assert_dbg((pref == -1) || (pref >= 0 && pref <= UINT8_MAX));
     VmRegOp result_reg = (pref == -1) ? reg_push(em) : pref;
 
+    // @todo If we ever get defer, the prev_debug_node var is 
+    // a good candidate because in the AST_IDENT and AST_CALL
+    // handling code below we have early returns due to the
+    // way we handle register allocation.
     Ast *prev_debug_node = em->debug_node;
     em->debug_node = expr;
 
