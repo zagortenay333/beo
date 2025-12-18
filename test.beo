@@ -1,14 +1,22 @@
 fn main {
-    fn add (x: []$T, y: T) {
-        .print(x);
-        .print(y);
+    {
+        fn add (x: []$T, y: T) {
+            .print(x);
+            .print(y);
+        }
+
+        add([1, 2, 3], 3);
+        add(["asdf",], "as");
     }
 
-    add([1, 2, 3], 3);
-    add(["asdf",], "as");
+    {
+        record Foo ($T) {
+            x: T;
+            y: []T;
+        }
 
-    var x: []?Int = [1, 2, 3];
-    var y: (?Float, ?Int) = (42.0, nil);
+        var x = Foo(Int){ x = 42, y = [1, 2] };
+    }
 }
 
 /*

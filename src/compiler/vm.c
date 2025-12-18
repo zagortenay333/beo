@@ -499,6 +499,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
     case AST_ENUM: break;
     case AST_RECORD: break;
     case AST_FN_POLY: break;
+    case AST_RECORD_POLY: break;
     case AST_TYPE_ALIAS: break;
     case AST_TYPE_DISTINCT: break;
 

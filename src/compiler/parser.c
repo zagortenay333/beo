@@ -27,12 +27,14 @@ istruct (Parser) {
 
 static Ast *parse_block (Parser *par);
 static Ast *parse_statement (Parser *par);
+static Void pop_arg_context (Parser *par);
 static Void parse_block_out (Parser *par, ArrayAst *);
 static Ast *parse_expression (Parser *par, U64 left_op);
 static Ast *parse_expression_before_brace (Parser *par);
 static Ast *try_parse_expression (Parser *par, U64 left_op);
 static Void mark_standalone_position (Parser *par, Ast *node);
 static Void try_parse_expression_list (Parser *par, ArrayAst *out);
+static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed);
 static Void mark_poly_arg_position (Parser *par, Ast *parent, Ast *node);
 static Ast *parse_var_def (Parser *par, Bool with_semicolon, Bool with_keyword);
 
@@ -223,6 +225,31 @@ static Ast *parse_record_member (Parser *par) {
     }
     default: return 0;
     }
+}
+
+static Ast *parse_record_poly (Parser *par) {
+    Auto node = make_node(par, AstRecordPoly);
+
+    lex_eat_this(lex, TOKEN_RECORD);
+    try_parse_attributes(cast(Ast*, node)->id,);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+
+    ArgContext *ctx = parse_args(par, false);
+    swap(node->args, ctx->args);
+    array_iter (arg, &node->args) mark_poly_arg_position(par, cast(Ast*, node), arg);
+    cast(Ast*, node)->flags &= ~AST_HAS_POLY_ARGS;
+    pop_arg_context(par);
+
+    lex_eat_this(lex, '{');
+
+    while (! lex_try_peek(lex, '}')) {
+        Ast *member = parse_record_member(par);
+        if (! member) break;
+        array_push(&node->members, member);
+    }
+
+    lex_eat_this(lex, '}');
+    return complete_node(par, node);
 }
 
 static Ast *parse_record (Parser *par) {
@@ -515,7 +542,7 @@ static Void mark_poly_arg_position (Parser *par, Ast *parent, Ast *node) {
     parent->flags |= (node->flags & AST_HAS_POLY_ARGS);
 }
 
-static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed, Bool code_args_allowed) {
+static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed) {
     ArgContext *ctx = push_arg_context(par);
     if (! lex_try_eat(lex, '(')) return ctx;
 
@@ -553,7 +580,7 @@ static Ast *parse_fn (Parser *par, Bool as_expression) {
     IString *name = as_expression ? 0 : lex_eat_this(lex, TOKEN_IDENT)->str;
     if (! name) name = make_anon_fn_name(par, start.offset);
 
-    ArgContext *ctx = parse_args(par, true, is_macro);
+    ArgContext *ctx = parse_args(par, true);
 
     Auto node = cast(AstBaseFn*, ast_alloc_id(par->mem, (ctx->polyargs.count ? AST_FN_POLY : AST_FN), is_macro, id));
     cast(Ast*, node)->pos = start;
@@ -1172,7 +1199,7 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_FN:       result = parse_fn(par, false); break;
     case TOKEN_RETURN:   result = parse_return(par); break;
     case TOKEN_ENUM:     result = parse_enum(par); break;
-    case TOKEN_RECORD:   result = parse_record(par); break;
+    case TOKEN_RECORD:   result = lex_try_peek_nth(lex, 3, '(') ? parse_record_poly(par) : parse_record(par); break;
     case TOKEN_VAR:      result = parse_var_def(par, true, true); result->flags |= AST_IS_LOCAL_VAR; break;
     case TOKEN_WHILE:    result = parse_while(par); break;
     case TOKEN_TYPE:     result = starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
@@ -1205,7 +1232,7 @@ static Ast *parse_top_statement (Parser *par) {
     switch (lex_peek(lex)->tag) {
     case ';':          while (lex_try_eat(lex, ';')); result = parse_top_statement(par); break;
     case TOKEN_ENUM:   result = parse_enum(par); break;
-    case TOKEN_RECORD: result = parse_record(par); break;
+    case TOKEN_RECORD: result = lex_try_peek_nth(lex, 3, '(') ? parse_record_poly(par) : parse_record(par); break;
     case TOKEN_FN:     result = parse_fn(par, false); break;
     case TOKEN_TYPE:   result = starts_with_attribute(alias) ? parse_type_alias(par) : parse_type_distinct(par); break;
     case TOKEN_VAR: {

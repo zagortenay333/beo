@@ -1072,8 +1072,12 @@ static MonoInfo *alloc_mono_info (Sem *sem, Ast *polymorph, Ast *instantiator) {
 static PolyInfo *alloc_poly_info (Sem *sem, Ast *polymorph) {
     PolyInfo *info = mem_new(sem->mem, PolyInfo);
 
-    assert_dbg(ast_get_base_flags[polymorph->tag] & AST_BASE_FN);
-    info->args = &cast(AstBaseFn*, polymorph)->inputs;
+    if (polymorph->tag == AST_RECORD_POLY) {
+        info->args = &cast(AstRecordPoly*, polymorph)->args;
+    } else {
+        assert_dbg(ast_get_base_flags[polymorph->tag] & AST_BASE_FN);
+        info->args = &cast(AstBaseFn*, polymorph)->inputs;
+    }
 
     info->node = polymorph;
     array_init(&info->polyargs, sem->mem);
@@ -1627,6 +1631,8 @@ static Ast *instantiate_polymorph (Sem *sem, MonoInfo *info, MonoInfo **out_inst
     Ast *instance  = ast_alloc(sem->mem, tag, AST_IS_POLYMORPH_INSTANCE | is_macro);
     instance->pos  = polymorph->pos;
 
+    // @todo What about attributes?? We are not copying those at all.
+
     if (tag == AST_FN) {
         AstFnPoly *p = cast(AstFnPoly*, polymorph);
         cast(AstFn*, instance)->name = instantiate_poly_name(sem, p->name, info->instantiator, instances->count);
@@ -2050,6 +2056,9 @@ static Result check_node (Sem *sem, Ast *node) {
             if (d->tag == AST_FN) {
                 Ast *out = cast(AstBaseFn*, d)->output;
                 set_type(node, (out ? try_get_type(out) : sem->core_types.type_Void));
+            } else {
+                assert_dbg(d->tag == AST_RECORD);
+                set_type(node, try_get_type(d));
             }
 
             return RESULT_OK;
@@ -2079,6 +2088,18 @@ static Result check_node (Sem *sem, Ast *node) {
                 try(check_call(sem, c, &cast(AstBaseFn*, c)->inputs, node, &n->args, true));
                 if (n->lhs->tag == AST_IDENT) sem_set_target(sem, n->lhs, n->sem_edge);
                 return RESULT_DEFER; // Wait for poly instance to get typed.
+            } else if (c->tag == AST_RECORD_POLY) {
+                node->flags |= AST_IS_TYPE;
+
+                if (node->flags & AST_HAS_POLY_ARGS) {
+                    try(check_call_args_layout(sem, c, &cast(AstRecordPoly*, c)->args, node, &n->args));
+                    set_type(node, alloc_type_var(sem, node, 0));
+                    sem_set_target(sem, node, c);
+                    return RESULT_OK;
+                } else {
+                    try(check_call(sem, c, &cast(AstRecordPoly*, c)->args, node, &n->args, true));
+                    return RESULT_DEFER; // Wait for poly instance to get typed.
+                }
             }
         }
 
@@ -2165,7 +2186,7 @@ static Result check_node (Sem *sem, Ast *node) {
         }
 
         map_iter (slot, &s->map) {
-            assert_dbg(slot->val->tag == AST_VAR_DEF);
+            if (slot->val->tag != AST_VAR_DEF) continue;
 
             Auto def = cast(AstVarDef*, slot->val);
             U64 idx  = array_find(&n->inits, IT->name == slot->key);
@@ -2457,6 +2478,18 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_RECORD_POLY: {
+        AstRecordPoly *n = cast(AstRecordPoly*, node);
+
+        array_iter (a, &n->args) {
+            Ast *init = get_init(a);
+            if (init && (init->flags & AST_MUST_EVAL) && !(init->flags & AST_EVALED)) return RESULT_DEFER;
+        }
+
+        set_type(node, alloc_type_misc(sem, node));
+        return RESULT_OK;
+    }
+
     case AST_BREAK:
     case AST_CONTINUE: {
         IString *label = (node->tag == AST_BREAK) ? cast(AstBreak*, node)->label : cast(AstContinue*, node)->label;
@@ -2586,7 +2619,7 @@ static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
     if (n->flags & AST_CREATES_SCOPE) scope = scope_new(sem, scope, n);
     if ((n->flags & AST_MUST_EVAL) && !(n->flags & AST_EVALED)) array_push(&sem->eval_list, n);
 
-    if (n->tag == AST_FN_POLY) {
+    if ((n->tag == AST_FN_POLY) || (n->tag == AST_RECORD_POLY)) {
         PolyInfo *prev = sem->poly_info;
         sem->poly_info = alloc_poly_info(sem, n);
         array_iter (arg, sem->poly_info->args) add_to_check_list(sem, arg, scope);
