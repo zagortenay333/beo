@@ -22,7 +22,7 @@ fn main {
             .print(y);
 
             var z: R = 3.3;
-            .print(y);
+            .print(z);
         }
 
         foo(x, Float, 42.0);
