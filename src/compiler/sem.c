@@ -1477,7 +1477,7 @@ static Ast *instantiate_poly_arg_helper (Ast *old_node, Ast *new_node, Void *con
         if (old_node->tag == AST_DOT) new_node->flags &= ~AST_IS_TYPE;
         if ((old_node->tag == AST_CAST) && !cast(AstCast*, old_node)->to) {
             assert_dbg(! (old_node->flags & AST_IN_POLY_ARG_POSITION));
-            // add_to_infer_list(sem, old_node, new_node);
+            add_to_infer_list(sem, old_node, new_node);
         }
         return 0;
     } else {
@@ -1659,87 +1659,6 @@ static Ast *instantiate_polymorph (Sem *sem, MonoInfo *info, MonoInfo **out_inst
     return instance;
 }
 
-static Void check_for_invalid_cycle_ (Sem *sem, AstTag tag, Ast *node, ArrayAst *path) {
-    if (! (node->flags & AST_ADDED_TO_CHECK_LIST)) return;
-
-    U64 prev = array_find(path, IT == node);
-
-    if (prev == ARRAY_NIL_IDX) {
-        if (node->tag == tag || node->tag == AST_IDENT) array_push(path, node);
-
-        Ast *d = get_target(node);
-        if (d && !get_type(d) && (d->tag == tag)) check_for_invalid_cycle_(sem, tag, d, path);
-
-        #define V(child, ...) check_for_invalid_cycle_(sem, tag, child, path);
-        AST_VISIT_CHILDREN(node, V);
-        #undef V
-
-        if (node->tag == tag || node->tag == AST_IDENT) path->count--;
-    } else {
-        sem_msg(msg, LOG_ERROR);
-        astr_push_fmt(msg, "Invalid cycle.\n\n");
-        array_iter_from (d, path, prev) log_node(sem, msg, d);
-        sem_panic(sem);
-    }
-}
-
-static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node) {
-    tmem_new(tm);
-    ArrayAst path;
-    array_init(&path, tm);
-    check_for_invalid_cycle_(sem, tag, node, &path);
-}
-
-// This performs checks common to ops that are fusable with
-// the assign op (+=, /=, ...) and their unfused counterparts.
-static Result check_assign_fusable_op (Sem *sem, AstBaseBinary *n, AstTag op) {
-    Type *t1 = try_get_type_v(n->op1);
-    Type *t2 = try_get_type_v(n->op2);
-
-    switch (op) {
-    case AST_ADD:
-    case AST_SUB:
-        if (t1->tag != TYPE_INT && t1->tag != TYPE_FLOAT && t1->tag != TYPE_STRING) return error_nt(sem, n->op1, t1, "expected Int or Float type.");
-        if (t2->tag != TYPE_INT && t2->tag != TYPE_FLOAT && t1->tag != TYPE_STRING) return error_nt(sem, n->op2, t2, "expected Int or Float type.");
-        return RESULT_OK;
-
-    case AST_MUL:
-    case AST_DIV:
-        if (t1->tag != TYPE_INT && t1->tag != TYPE_FLOAT) return error_nt(sem, n->op1, t1, "expected Int or Float type.");
-        if (t2->tag != TYPE_INT && t2->tag != TYPE_FLOAT) return error_nt(sem, n->op2, t2, "expected Int or Float type.");
-        return RESULT_OK;
-
-    case AST_MOD:
-        if (t1->tag != TYPE_INT) return error_nt(sem, n->op1, t1, "expected int type.");
-        if (t2->tag != TYPE_INT) return error_nt(sem, n->op2, t2, "expected int type.");
-        return RESULT_OK;
-
-    default: badpath;
-    }
-}
-
-// RESULT_ERROR means that it's not read only.
-static Result check_is_read_only (Sem *sem, Ast *n) {
-    if (n->flags & (AST_IS_READ_ONLY | AST_IS_TYPE)) return RESULT_OK;
-
-    reach(r);
-    #define RETURN(R) {\
-        def1(r, acast(Result, R));\
-        reached(r);\
-        if (r == RESULT_OK) n->flags |= AST_IS_READ_ONLY;\
-        return r;\
-    }
-
-    switch (n->tag) {
-    case AST_DOT:   { Ast *d = cast(AstDot*, n)->sem_edge;   RETURN(d ? check_is_read_only(sem, d) : RESULT_DEFER); }
-    case AST_IDENT: { Ast *d = cast(AstIdent*, n)->sem_edge; RETURN((d && (d->flags & AST_IS_READ_ONLY)) ? RESULT_OK : RESULT_ERROR); }
-    case AST_INDEX: { Ast *l = cast(AstIndex*, n)->lhs;      RETURN(check_is_read_only(sem, l)); }
-    default:        RETURN(RESULT_ERROR);
-    }
-
-    #undef RETURN
-}
-
 static Result check_call_args_layout (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
     if (call_args->count > target_args->count) {
         return error_nn(sem, caller, target, "Too many call args. Got %lu, but expected %lu.", call_args->count, target_args->count);
@@ -1919,6 +1838,87 @@ static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *cal
         reached(r);
         return r;
     }
+}
+
+static Void check_for_invalid_cycle_ (Sem *sem, AstTag tag, Ast *node, ArrayAst *path) {
+    if (! (node->flags & AST_ADDED_TO_CHECK_LIST)) return;
+
+    U64 prev = array_find(path, IT == node);
+
+    if (prev == ARRAY_NIL_IDX) {
+        if (node->tag == tag || node->tag == AST_IDENT) array_push(path, node);
+
+        Ast *d = get_target(node);
+        if (d && !get_type(d) && (d->tag == tag)) check_for_invalid_cycle_(sem, tag, d, path);
+
+        #define V(child, ...) check_for_invalid_cycle_(sem, tag, child, path);
+        AST_VISIT_CHILDREN(node, V);
+        #undef V
+
+        if (node->tag == tag || node->tag == AST_IDENT) path->count--;
+    } else {
+        sem_msg(msg, LOG_ERROR);
+        astr_push_fmt(msg, "Invalid cycle.\n\n");
+        array_iter_from (d, path, prev) log_node(sem, msg, d);
+        sem_panic(sem);
+    }
+}
+
+static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node) {
+    tmem_new(tm);
+    ArrayAst path;
+    array_init(&path, tm);
+    check_for_invalid_cycle_(sem, tag, node, &path);
+}
+
+// This performs checks common to ops that are fusable with
+// the assign op (+=, /=, ...) and their unfused counterparts.
+static Result check_assign_fusable_op (Sem *sem, AstBaseBinary *n, AstTag op) {
+    Type *t1 = try_get_type_v(n->op1);
+    Type *t2 = try_get_type_v(n->op2);
+
+    switch (op) {
+    case AST_ADD:
+    case AST_SUB:
+        if (t1->tag != TYPE_INT && t1->tag != TYPE_FLOAT && t1->tag != TYPE_STRING) return error_nt(sem, n->op1, t1, "expected Int or Float type.");
+        if (t2->tag != TYPE_INT && t2->tag != TYPE_FLOAT && t1->tag != TYPE_STRING) return error_nt(sem, n->op2, t2, "expected Int or Float type.");
+        return RESULT_OK;
+
+    case AST_MUL:
+    case AST_DIV:
+        if (t1->tag != TYPE_INT && t1->tag != TYPE_FLOAT) return error_nt(sem, n->op1, t1, "expected Int or Float type.");
+        if (t2->tag != TYPE_INT && t2->tag != TYPE_FLOAT) return error_nt(sem, n->op2, t2, "expected Int or Float type.");
+        return RESULT_OK;
+
+    case AST_MOD:
+        if (t1->tag != TYPE_INT) return error_nt(sem, n->op1, t1, "expected int type.");
+        if (t2->tag != TYPE_INT) return error_nt(sem, n->op2, t2, "expected int type.");
+        return RESULT_OK;
+
+    default: badpath;
+    }
+}
+
+// RESULT_ERROR means that it's not read only.
+static Result check_is_read_only (Sem *sem, Ast *n) {
+    if (n->flags & (AST_IS_READ_ONLY | AST_IS_TYPE)) return RESULT_OK;
+
+    reach(r);
+    #define RETURN(R) {\
+        def1(r, acast(Result, R));\
+        reached(r);\
+        if (r == RESULT_OK) n->flags |= AST_IS_READ_ONLY;\
+        return r;\
+    }
+
+    switch (n->tag) {
+    case AST_DOT:   { Ast *d = cast(AstDot*, n)->sem_edge;   RETURN(d ? check_is_read_only(sem, d) : RESULT_DEFER); }
+    case AST_IDENT: { Ast *d = cast(AstIdent*, n)->sem_edge; RETURN((d && (d->flags & AST_IS_READ_ONLY)) ? RESULT_OK : RESULT_ERROR); }
+    case AST_INDEX: { Ast *l = cast(AstIndex*, n)->lhs;      RETURN(check_is_read_only(sem, l)); }
+    default:        RETURN(RESULT_ERROR);
+    }
+
+    #undef RETURN
 }
 
 static Bool check_statement_returns (Sem *sem, Ast *node) {
@@ -2136,7 +2136,8 @@ static Result check_node (Sem *sem, Ast *node) {
         else                        array_iter_from (f, &n->members, 1) try_get_type_v(f);
 
         node->flags |= (f->flags & AST_IS_TYPE) ? AST_IS_TYPE : AST_IS_LITERAL;
-        set_type(node, alloc_type_tuple(sem, n));
+        Type *t = set_type(node, alloc_type_tuple(sem, n));
+        if ((node->flags & AST_IS_LITERAL) && !(node->flags & AST_IN_STANDALONE_POSITION)) t->flags |= TYPE_IS_UNTYPED_LIT;
 
         return RESULT_OK;
     }
@@ -2242,6 +2243,8 @@ static Result check_node (Sem *sem, Ast *node) {
         if (et->flags & TYPE_IS_SPECIAL) return error_n(sem, node, "Invalid element type for array.");
 
         Type *t = set_type(node, alloc_type_array(sem, node, 0));
+        if (! (node->flags & AST_IN_STANDALONE_POSITION)) t->flags |= TYPE_IS_UNTYPED_LIT;
+
         cast(TypeArray*, t)->element = et;
 
         return RESULT_OK;

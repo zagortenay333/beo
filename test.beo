@@ -6,6 +6,9 @@ fn main {
 
     add([1, 2, 3], 3);
     add(["asdf",], "as");
+
+    var x: []?Int = [1, 2, 3];
+    var y: (?Float, ?Int) = (42.0, 3);
 }
 
 /*
