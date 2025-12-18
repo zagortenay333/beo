@@ -11,8 +11,19 @@ istruct (PolyInfo) {
 };
 
 istruct (MonoInfo);
-istruct (ValueInstance) { TypeVar *var; Ast **val; Ast *instance; };
-istruct (TypeInstance)  { TypeVar *var; Type *t; Ast *instance; MonoInfo *i; };
+
+istruct (ValueInstance) {
+    TypeVar *var;
+    Ast **val;
+    Ast *instance;
+};
+
+istruct (TypeInstance) {
+    TypeVar *var;
+    Type *t;
+    Ast *instance;
+    MonoInfo *i;
+};
 
 istruct (MonoInfo) {
     U64 depth;
@@ -35,6 +46,18 @@ istruct (MatchPair) {
     Ast *n2;
     Type *t1;
     Type *t2;
+};
+
+istruct (PendingCast) {
+    Ast *to;
+    Ast **from;
+    Type *to_type;
+};
+
+istruct (UntypedLit) {
+    Ast *lit;
+    Ast *bind;
+    Type *tvar;
 };
 
 ienum (Subtype, U8) {
@@ -60,6 +83,7 @@ istruct (Sem) {
 
     ArrayAst eval_list;
     ArrayAst check_list;
+    Array(struct { Ast *from, *to; }) infer_list;
 
     U64 error_count;
     U64 next_type_id;
@@ -79,6 +103,26 @@ istruct (Sem) {
         MatchPair top_pair;
         U64 without_error_reporting;
     } match;
+
+    struct { // Info about ongoing check_call().
+        Bool ongoing;
+        Bool bound_var_to_var;
+        Bool bound_var_to_val;
+        Array(MonoInfo*) mono_infos;
+        Array(MonoInfo*) mono_infos_pool;
+        ArrayType simple_untyped_lits;
+        Array(PendingCast) casts;
+        Array(UntypedLit) untyped_lits;
+        Array(struct { MonoInfo *i1; MonoInfo *i2; Ast *a; Ast *b; }) values_to_match;
+
+        // These vars act as implicit arguments to match functions
+        // that deal with tvar_types and tvar_values. They must be
+        // maintained in pop/push or swap/unswap fashion.
+        //
+        //     Result match_* (Sem *sem, Type *t1, Type *t2) {}
+        //                                     ^^--i1    ^^--i2
+        MonoInfo *i1, *i2;
+    } call_check;
 };
 
 static Ast *get_target (Ast *node);
@@ -89,12 +133,18 @@ static Result match_nc (Sem *sem, Ast *n, Ast *c);
 static Result match_tt (Sem *sem, Type *t1, Type *t2);
 static Result match_tv (Sem *sem, Type *t, Ast **v);
 static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2);
+static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype subtype);
+static Void add_to_infer_list (Sem *sem, Ast *from, Ast *to);
+MonoInfo *sem_get_mono_info (Sem *sem, Ast *node);
+static Ast *instantiate_poly_arg (Sem *sem, Ast *arg, MonoInfo *info, Ast *instance);
 static Bool check_sequence_returns (Sem *sem, ArrayAst *seq);
 static Void set_const_val (Sem *sem, Ast *node, VmReg reg);
 static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope);
 static Void check_for_invalid_cycle (Sem *sem, AstTag tag, Ast *node);
 static Result error_n Fmt(3, 4) (Sem *sem, Ast *n, CString fmt, ...);
 static Result error_nn Fmt(4, 5) (Sem *sem, Ast *n1, Ast *n2, CString fmt, ...);
+static Result match_tuples (Sem *sem, AstTuple *tup1, AstTuple *tup2, Type *t1, Type *t2, Subtype subtype);
+static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args, Bool);
 
 static U64 get_type_struct_size [] = {
     #define X(_, type, ...) cast(U64, sizeof(type)),
@@ -115,6 +165,7 @@ static TypeFlags get_default_type_flags [] = {
 };
 
 #define MAX_RECORDED_ERRORS 32
+#define MAX_RECURSIVE_INSTANTIATIONS 1024
 
 #define sem_msg(N, TAG) log_msg(N, TAG, "Typer", 1);
 
@@ -164,7 +215,6 @@ inl Bool is_tvar_type (Type *t)        { return (t->tag == TYPE_VAR) && (cast(Ty
 inl Bool is_tvar_value (Type *t)       { return (t->tag == TYPE_VAR) && (cast(TypeVar*, t)->node->tag == AST_ARG_POLY_VALUE); }
 inl Bool is_tvar_array_lit (Type *t)   { return (t->tag == TYPE_ARRAY) && (t->flags & TYPE_IS_UNTYPED_LIT); }
 inl Bool is_tvar_tuple_lit (Type *t)   { return (t->tag == TYPE_TUPLE) && (t->flags & TYPE_IS_UNTYPED_LIT); }
-inl Bool is_tvar_untyped_lit (Type *t) { return (t->flags & TYPE_IS_UNTYPED_LIT); }
 
 static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     AstFile *file = map_get_ptr(&sem->files, path);
@@ -185,6 +235,48 @@ static AstFile *import_file (Sem *sem, IString *path, Ast *error_node) {
     add_to_check_list(sem, cast(Ast*, file), sem->autoimports);
     map_add(&sem->files, path, file);
     return file;
+}
+
+static Bool type_has_polyargs (Type *type) {
+    switch (type->tag) {
+    case TYPE_FN:      { Ast *n = cast(Ast*, cast(TypeFn*, type)->node); return n->flags & AST_HAS_POLY_ARGS; }
+    case TYPE_ARRAY:   { Ast *n = cast(Ast*, cast(TypeArray*, type)->node); return n->flags & AST_HAS_POLY_ARGS; }
+    case TYPE_TUPLE:   { Ast *n = cast(Ast*, cast(TypeTuple*, type)->node); return n->flags & AST_HAS_POLY_ARGS; }
+    case TYPE_RECORD:  { Ast *n = cast(Ast*, cast(TypeRecord*, type)->node); return n->flags & AST_HAS_POLY_ARGS; }
+    case TYPE_OPTION:  { Type *t = cast(TypeOption*, type)->underlying; return type_has_polyargs(t); }
+    case TYPE_BOOL:    return false;
+    case TYPE_ENUM:    return false;
+    case TYPE_FLOAT:   return false;
+    case TYPE_INT:     return false;
+    case TYPE_TOP:     return false;
+    case TYPE_FFI:     return false;
+    case TYPE_STRING:  return false;
+    case TYPE_VOID:    return false;
+    case TYPE_MISC:    return false;
+    case TYPE_VAR:     return true;
+    }
+    badpath;
+}
+
+static Ast *get_type_constructor (Type *type) {
+    switch (type->tag) {
+    case TYPE_ARRAY:   return cast(Ast*, cast(TypeArray*, type)->node);
+    case TYPE_FN:      return cast(Ast*, cast(TypeFn*, type)->node);
+    case TYPE_OPTION:  return cast(Ast*, cast(TypeOption*, type)->node);
+    case TYPE_RECORD:  return cast(Ast*, cast(TypeRecord*, type)->node);
+    case TYPE_TUPLE:   return cast(Ast*, cast(TypeTuple*, type)->node);
+    case TYPE_VAR:     return cast(Ast*, cast(TypeVar*, type)->node);
+    case TYPE_INT:     return 0;
+    case TYPE_MISC:    return 0;
+    case TYPE_STRING:  return 0;
+    case TYPE_FFI:     return 0;
+    case TYPE_TOP:     return 0;
+    case TYPE_BOOL:    return 0;
+    case TYPE_ENUM:    return 0;
+    case TYPE_FLOAT:   return 0;
+    case TYPE_VOID:    return 0;
+    }
+    badpath;
 }
 
 static Type *get_underlying_from_distinct_type (Sem *sem, Type *t) {
@@ -483,8 +575,9 @@ static Type *alloc_type_misc (Sem *sem, Ast *n) {
     return cast(Type*, t);
 }
 
-static Type *alloc_type_option (Sem *sem, Type *underlying) {
+static Type *alloc_type_option (Sem *sem, Type *underlying, Ast *node) {
     Auto t = cast(TypeOption*, alloc_type(sem, TYPE_OPTION));
+    t->node = node;
     t->underlying = underlying;
     return cast(Type*, t);
 }
@@ -569,6 +662,13 @@ static Result scope_add (Sem *sem, Scope *scope, IString *key, Ast *val, Ast *er
 
 Scope *sem_scope_get_ancestor (Scope *s, AstTag tag) {
     for (; s; s = s->parent) if (s->owner->tag == tag) return s;
+    return 0;
+}
+
+static Scope *scope_of_instance (Ast *node) {
+    for (Scope *s = get_scope(node); s && s->owner; s = s->parent) {
+        if (s->owner->flags & AST_IS_POLYMORPH_INSTANCE) return s;
+    }
     return 0;
 }
 
@@ -737,6 +837,39 @@ static Void log_nodes (Sem *sem, AString *astr, Ast *n1, Ast *n2) {
     slog_flush(slog, astr);
 }
 
+static Void log_poly_trace (Sem *sem, AString *astr, Ast *node) {
+    Scope *scope = scope_of_instance(node);
+    if (! scope) return;
+
+    astr_push_cstr(astr, "\nPolymorph instantiation trace:\n\n");
+
+    U64 margin = slog_default_config->left_margin;
+
+    while (scope) {
+        MonoInfo *info = sem_get_mono_info(sem, scope->owner);
+        AstFile *file  = get_file(info->instantiator);
+
+        astr_push_fmt(astr, "%*s" TERM_RED("FILE") ": (byte=%lu, line=%lu, file=", cast(Int,margin), "", info->instantiator->pos.offset, info->instantiator->pos.first_line);
+        astr_push_str_quoted(astr, *file->path);
+
+        if (info->type_map.count) {
+            astr_push_byte(astr, ' ');
+            array_iter (x, &info->type_map, *) {
+                IString *n = get_name(x->var->node);
+                astr_push_fmt(astr, "%.*s=", STR(*n));
+                log_type(sem, astr, x->t);
+                if (! ARRAY_ITER_DONE) astr_push_cstr(astr, ", ");
+            }
+        }
+
+        astr_push_cstr(astr, ")");
+        scope = scope_of_instance(info->instantiator);
+        if (scope) astr_push_byte(astr, '\n');
+    }
+
+    astr_push_byte(astr, '\n');
+}
+
 Void sem_print_node (Sem *sem, AString *astr, Ast *node) {
     U64 margin = slog_default_config->left_margin;
     astr_push_fmt(astr, "%*s" TERM_RED("TAG") ": %s\n", cast(Int,margin), "", ast_tag_to_cstr[node->tag]);
@@ -790,6 +923,7 @@ static Result error_n Fmt(3, 4) (Sem *sem, Ast *n, CString fmt, ...) {
     astr_push_byte(msg, '\n');
     astr_push_byte(msg, '\n');
     log_node(sem, msg, n);
+    log_poly_trace(sem, msg, n);
     sem->error_count++;
     return RESULT_ERROR;
 }
@@ -801,6 +935,7 @@ static Result error_nn Fmt(4, 5) (Sem *sem, Ast *n1, Ast *n2, CString fmt, ...) 
     astr_push_byte(msg, '\n');
     astr_push_byte(msg, '\n');
     log_nodes(sem, msg, n1, n2);
+    log_poly_trace(sem, msg, n2);
     sem->error_count++;
     return RESULT_ERROR;
 }
@@ -815,6 +950,30 @@ static Result error_nt Fmt(4, 5) (Sem *sem, Ast *n, Type *t, CString fmt, ...) {
     astr_push_byte(msg, '\n');
     astr_push_byte(msg, '\n');
     log_node(sem, msg, n);
+    log_poly_trace(sem, msg, n);
+    sem->error_count++;
+    return RESULT_ERROR;
+}
+
+static Result error_unbound_polyvars (Sem *sem, Ast *caller, Ast *target) {
+    assert_dbg(sem->call_check.ongoing);
+    if (NO_ERROR_REPORTING()) return RESULT_ERROR;
+
+    tmem_new(tm);
+    sem_msg(msg, LOG_ERROR);
+    SrcLog *slog = slog_new(tm, slog_default_config);
+
+    astr_push_cstr(msg, "Unable to bind all poly variables.\n\n");
+    log_nodes(sem, msg, caller, target);
+
+    astr_push_cstr(msg, "Here are the unbound variables:\n\n");
+    array_iter (info, &sem->call_check.mono_infos) {
+        array_iter (x, &info->type_map, *)  if (!x->t || is_tvar_type(x->t)) log_node_no_flush(sem, slog, msg, get_type_constructor(cast(Type*, x->var)));
+        array_iter (x, &info->value_map, *) if (! x->val) log_node_no_flush(sem, slog, msg, get_type_constructor(cast(Type*, x->var)));
+    }
+
+    slog_flush(slog, msg);
+    log_poly_trace(sem, msg, caller);
     sem->error_count++;
     return RESULT_ERROR;
 }
@@ -852,6 +1011,64 @@ static Result error_match (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
     return RESULT_ERROR;
 }
 
+static Void implicit_cast (Sem *sem, Ast **pn, Ast *to, Type *to_type) {
+    Ast *n = *pn;
+
+    if (sem->call_check.ongoing) {
+        assert_dbg((to != sem->match.dummy1) && (to != sem->match.dummy2));
+        PendingCast *found = array_find_ref(&sem->call_check.casts, (IT->to == to) && (IT->from == pn));
+        if (! found) array_push_lit(&sem->call_check.casts, .to=to, .to_type=to_type, .from=pn);
+    } else {
+        Ast *c = ast_alloc(sem->mem, AST_CAST, 0);
+        c->pos = n->pos;
+        c->flags |= (n->flags & (AST_MUST_EVAL|AST_IS_LITERAL));
+        cast(AstCast*, c)->expr = n;
+
+        add_to_check_list(sem, c, get_scope(n));
+        set_type(c, to_type);
+
+        *pn = c;
+        sem->match.applied_cast = true;
+    }
+}
+
+MonoInfo *sem_get_mono_info (Sem *sem, Ast *node) {
+    return map_get_ptr(&sem->mono_infos, node->id);
+}
+
+static PolyInfo *get_poly_info (Sem *sem, Ast *node) {
+    return map_get_ptr(&sem->poly_infos, node->id);
+}
+
+static MonoInfo *alloc_mono_info (Sem *sem, Ast *polymorph, Ast *instantiator) {
+    assert_dbg(polymorph->flags & (AST_IS_POLYMORPH | AST_IS_MACRO));
+
+    MonoInfo *info = array_pop_or(&sem->call_check.mono_infos_pool, 0);
+
+    if (info) {
+        info->type_map.count     = 0;
+        info->value_map.count    = 0;
+        info->instance_map.count = 0;
+    } else {
+        info = mem_new(sem->mem, MonoInfo);
+        array_init(&info->type_map, sem->mem);
+        array_init(&info->value_map, sem->mem);
+        array_init(&info->instance_map, sem->mem);
+    }
+
+    info->poly_info    = get_poly_info(sem, polymorph);
+    info->instantiator = instantiator;
+    array_push(&sem->call_check.mono_infos, info);
+
+    array_iter (n, &info->poly_info->polyargs) {
+        TypeVar *t = cast(TypeVar*, get_type(n));
+        if (n->tag == AST_ARG_POLY_TYPE) array_push_lit(&info->type_map, .var=t);
+        else                             array_push_lit(&info->value_map, .var=t);
+    }
+
+    return info;
+}
+
 static PolyInfo *alloc_poly_info (Sem *sem, Ast *polymorph) {
     PolyInfo *info = mem_new(sem->mem, PolyInfo);
 
@@ -865,19 +1082,206 @@ static PolyInfo *alloc_poly_info (Sem *sem, Ast *polymorph) {
     return info;
 }
 
-static Void implicit_cast (Sem *sem, Ast **pn, Type *to_type) {
-    Ast *n = *pn;
+static Void bind_simple_untyped_lit (Sem *sem, Type *t) {
+    assert_dbg(is_tvar_array_lit(t) || is_tvar_tuple_lit(t));
 
-    Ast *c = ast_alloc(sem->mem, AST_CAST, 0);
-    c->pos = n->pos;
-    c->flags |= (n->flags & (AST_MUST_EVAL|AST_IS_LITERAL));
-    cast(AstCast*, c)->expr = n;
+    if (sem->call_check.ongoing) {
+        array_push(&sem->call_check.simple_untyped_lits, t);
+    } else {
+        t->flags &= ~TYPE_IS_UNTYPED_LIT;
+    }
+}
 
-    add_to_check_list(sem, c, get_scope(n));
-    set_type(c, to_type);
+static Void bind_simple_untyped_lit_recursively (Sem *sem, Type *t) {
+    if (is_tvar_array_lit(t)) {
+        t->flags &= ~TYPE_IS_UNTYPED_LIT;
+        AstArrayLiteral *lit = cast(AstArrayLiteral*, cast(TypeArray*, t)->node);
+        array_iter (x, &lit->inits) bind_simple_untyped_lit_recursively(sem, get_type(x));
+    } else if (is_tvar_tuple_lit(t)) {
+        t->flags &= ~TYPE_IS_UNTYPED_LIT;
+        array_iter (x, &cast(TypeTuple*, t)->node->members) bind_simple_untyped_lit_recursively(sem, get_type(x));
+    }
+}
 
-    *pn = c;
-    sem->match.applied_cast = true;
+// Match a polymorphic function to the variable it is
+// being assigned to via the assignment operator or
+// by being passed as argument to a fn:
+//
+//     fn foo (x: $T) -> T {}
+//     x = foo;
+//         ^^^-------------------- assignment via identifier
+//     bar(fn (x: $T) {});
+//         ^^^^^^^^^^^^^---------- assignment via fn literal
+//
+static Result match_tvar_fn (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar_fn(t1));
+
+    if (t2->tag != TYPE_FN) return ERROR_MATCH();
+
+    AstBaseFn *fn = cast(TypeFn*, t2)->node;
+    Ast *instantiator = cast(TypeVar*, t1)->node;
+    assert_dbg(instantiator->tag == AST_IDENT || instantiator->tag == AST_FN_POLY);
+
+    if (! sem->call_check.ongoing) {
+        ArrayAst a1 = { .data=cast(Ast**, &fn), .count=1, .capacity=1 };
+        ArrayAst a2 = { .data=&instantiator, .count=1, .capacity=1 };
+        return check_call(sem, cast(Ast*, fn), &a1, instantiator, &a2, false);
+    }
+
+    AstBaseFn *poly_fn = (instantiator->tag == AST_FN_POLY) ? cast(AstBaseFn*, instantiator ): cast(AstBaseFn*, get_target(instantiator));
+    if ((poly_fn->inputs.count != fn->inputs.count) || (!!poly_fn->output != !!fn->output)) return ERROR_MATCH();
+
+    MonoInfo *prev_m1 = sem->call_check.i1;
+    sem->call_check.i1 = array_find_get(&sem->call_check.mono_infos, IT->instantiator == instantiator);
+    if (! sem->call_check.i1) sem->call_check.i1 = alloc_mono_info(sem, cast(Ast*, poly_fn), instantiator);
+
+    reach(r);
+    #define RETURN(R) { reached(r); sem->call_check.i1 = prev_m1; return R; }
+
+    array_iter (a, &poly_fn->inputs) try(match_nn(sem, a, array_get(&fn->inputs, ARRAY_IDX)), RETURN(R));
+    if (fn->output) try(match_nn(sem, poly_fn->output, fn->output), RETURN(R));
+
+    RETURN(RESULT_OK);
+    #undef RETURN
+}
+
+// Array literals not in standalone position have a variable
+// type so that we can implicitly cast it's inits to the type
+// of the expression that the array literal is being matched
+// against. For example:
+//
+//     var x: []?Int = [42, 420];
+//                     ^^^^^^^^^---- tvar_array_lit
+//
+static Result match_tvar_array_lit (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar_array_lit(t2));
+
+    Ast *n2 = *pn2;
+    AstArrayLiteral *lit = cast(AstArrayLiteral*, cast(TypeArray*, t2)->node);
+    Ast **init0 = array_ref(&lit->inits, 0);
+
+    if (is_tvar_array_lit(t1)) {
+        AstArrayLiteral *lit1 = cast(AstArrayLiteral*, cast(TypeArray*, t1)->node);
+        if (lit->inits.count != lit1->inits.count) return ERROR_MATCH();
+        try(match_vv(sem, array_ref(&lit1->inits, 0), init0));
+        bind_simple_untyped_lit(sem, t1);
+        bind_simple_untyped_lit(sem, t2);
+        return RESULT_OK;
+    }
+
+    if (t1->tag == TYPE_ARRAY) {
+        TypeArray *a = cast(TypeArray*, t1);
+
+        if (a->node->tag == AST_ARRAY_TYPE) {
+            try(match_nv(sem, cast(AstArrayType*, a->node)->element, init0));
+        } else {
+            try(match_tv(sem, a->element, init0));
+        }
+
+        bind_simple_untyped_lit(sem, t2);
+        return RESULT_OK;
+    }
+
+    return ERROR_MATCH();
+}
+
+// Tuple literals not in standalone position have variable
+// type for the same reason outlined in match_tvar_array_lit().
+static Result match_tvar_tuple_lit (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar_tuple_lit(t2));
+
+    Ast *n2 = *pn2;
+    AstTuple *lit = cast(TypeTuple*, t2)->node;
+
+    if (is_tvar_tuple_lit(t1)) {
+        try(match_tuples(sem, cast(TypeTuple*, t1)->node, lit, t1, t2, SUBTYPE_ANY_WAY));
+        bind_simple_untyped_lit(sem, t1);
+        bind_simple_untyped_lit(sem, t2);
+        return RESULT_OK;
+    }
+
+    if (t1->tag == TYPE_TUPLE) {
+        try(match_tuples(sem, cast(TypeTuple*, t1)->node, lit, t1, t2, SUBTYPE_ONE_WAY));
+        bind_simple_untyped_lit(sem, t2);
+        return RESULT_OK;
+    }
+
+    return ERROR_MATCH();
+}
+
+static Type *get_tvar_type (MonoInfo *info, TypeVar *var, MonoInfo **out_info) {
+    assert_dbg(is_tvar_type(cast(Type*, var)));
+    if (! info) return 0;
+    TypeInstance *e = array_find_ref(&info->type_map, IT->var == var);
+    if (!e->t || is_tvar_type(e->t)) return 0;
+    if (out_info) *out_info = e->i;
+    return e->t;
+}
+
+static Void set_tvar_type (Sem *sem, MonoInfo *i1, MonoInfo *i2, TypeVar *var, Type *t) {
+    assert_dbg(is_tvar_type(cast(Type*, var)));
+    TypeInstance *e = array_find_ref(&i1->type_map, IT->var == var);
+    e->t   = t;
+    e->i   = i2;
+    if (is_tvar_type(t)) sem->call_check.bound_var_to_var = true;
+    else                 sem->call_check.bound_var_to_val = true;
+}
+
+// Match against a polymorphic type argument:
+//
+//        fn foo ($T, x: $R) {}
+//                ^^-----^^------------ tvar_type
+//
+static Result match_tvar_type (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar_type(t1));
+    if (t2->tag == TYPE_MISC) return ERROR_MATCH();
+    set_tvar_type(sem, sem->call_check.i1, sem->call_check.i2, cast(TypeVar*, t1), t2);
+    if (is_tvar_type(t2)) set_tvar_type(sem, sem->call_check.i2, sem->call_check.i1, cast(TypeVar*, t2), t1);
+    return RESULT_OK;
+}
+
+static Result match_tvar (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype subtype) {
+    assert_dbg(sem->match.ongoing);
+    assert_dbg(is_tvar(t1) || is_tvar(t2));
+
+    Ast *n1 = *pn1;
+    Ast *n2 = *pn2;
+    MonoInfo *prev_m1 = sem->call_check.i1;
+    MonoInfo *prev_m2 = sem->call_check.i2;
+
+    if (is_tvar_type(t1)) { Type *t = get_tvar_type(sem->call_check.i1, cast(TypeVar*, t1), &sem->call_check.i1); t1 = t ? t : t1; }
+    if (is_tvar_type(t2)) { Type *t = get_tvar_type(sem->call_check.i2, cast(TypeVar*, t2), &sem->call_check.i2); t2 = t ? t : t2; }
+
+    Result r;
+    reach(r);
+    #define RETURN(R)   { r = R; goto done; }
+    #define RETURN_S(R) { swap(sem->call_check.i1, sem->call_check.i2); RETURN(R); }
+
+    if (t1 == t2)                     RETURN(RESULT_OK);
+    if (!is_tvar(t1) && !is_tvar(t2)) RETURN(match(sem, pn1, pn2, t1, t2, subtype));
+    if (is_tvar_type(t1))             RETURN(match_tvar_type(sem, n1, n2, t1, t2));
+    if (is_tvar_type(t2))             RETURN_S(match_tvar_type(sem, n2, n1, t2, t1));
+    if (is_tvar_array_lit(t2))        RETURN(match_tvar_array_lit(sem, n1, pn2, t1, t2));
+    if (is_tvar_array_lit(t1))        RETURN_S(match_tvar_array_lit(sem, n2, pn1, t2, t1));
+    if (is_tvar_tuple_lit(t2))        RETURN(match_tvar_tuple_lit(sem, n1, pn2, t1, t2));
+    if (is_tvar_tuple_lit(t1))        RETURN_S(match_tvar_tuple_lit(sem, n2, pn1, t2, t1));
+    if (is_tvar_fn(t1))               RETURN(match_tvar_fn(sem, n1, n2, t1, t2));
+    if (is_tvar_fn(t2))               RETURN_S(match_tvar_fn(sem, n2, n1, t2, t1));
+
+    badpath;
+
+    done: {
+        sem->call_check.i1 = prev_m1;
+        sem->call_check.i2 = prev_m2;
+        #undef RETURN
+        #undef RETURN_S
+        reached(r);
+        return r;
+    }
 }
 
 static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type *t2) {
@@ -890,7 +1294,7 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
     #define RETURN(R, ...) {\
         def1(r, R);\
         reached(r);\
-        __VA_OPT__(if (false)) if (r == RESULT_OK) implicit_cast(sem, pn2, t1);\
+        __VA_OPT__(if (false)) if (r == RESULT_OK) implicit_cast(sem, pn2, n1, t1);\
         return r;\
     }
 
@@ -911,6 +1315,23 @@ static Result match_substructural (Sem *sem, Ast *n1, Ast **pn2, Type *t1, Type 
     }
 
     #undef RETURN
+}
+
+static Result match_tuples (Sem *sem, AstTuple *tup1, AstTuple *tup2, Type *t1, Type *t2, Subtype subtype) {
+    Auto ty1 = cast(TypeTuple*, t1);
+    Auto ty2 = cast(TypeTuple*, t2);
+
+    Ast *n1 = cast(Ast*, tup1);
+    Ast *n2 = cast(Ast*, tup2);
+
+    if (ty1->node->members.count != ty2->node->members.count) return ERROR_MATCH();
+
+    array_iter (m1, &ty1->node->members, *) {
+        Ast **m2 = array_ref(&ty2->node->members, ARRAY_IDX);
+        try(match(sem, m1, m2, get_type(*m1), get_type(*m2), subtype));
+    }
+
+    return RESULT_OK;
 }
 
 static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) {
@@ -943,17 +1364,7 @@ static Result match_structural (Sem *sem, Ast *n1, Ast *n2, Type *t1, Type *t2) 
     }
 
     case TYPE_TUPLE: {
-        Auto ty1 = cast(TypeTuple*, t1);
-        Auto ty2 = cast(TypeTuple*, t2);
-
-        if (ty1->node->members.count != ty2->node->members.count) return ERROR_MATCH();
-
-        array_iter (m1, &ty1->node->members) {
-            Ast *m2 = array_get(&ty2->node->members, ARRAY_IDX);
-            try(match_nn(sem, m1, m2), return R);
-        }
-
-        return RESULT_OK;
+        return match_tuples(sem, cast(TypeTuple*, t1)->node, cast(TypeTuple*, t2)->node, t1, t2, SUBTYPE_TWO_WAY);
     }
 
     case TYPE_ARRAY: {
@@ -1003,37 +1414,35 @@ static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype
         goto repeat;
     }
 
-    //
-    // From this point on we have to recursively match structural types.
-    //
-
     if (! sem->match.ongoing) sem->match.top_pair = (MatchPair){n1,n2,t1,t2};
     sem->match.ongoing++;
 
     Result r = RESULT_DEFER;
+    reach(r);
+    #define RETURN(R) { r = R; goto done; }
 
-    switch (subtype) {
-    case SUBTYPE_TWO_WAY:
-        r = match_structural(sem, n1, n2, t1, t2);
-        break;
-    case SUBTYPE_ONE_WAY:
-        r = match_substructural(sem, n1, pn2, t1, t2);
-        break;
-    case SUBTYPE_ANY_WAY:
-        sem->match.without_error_reporting++;
-        r = match_substructural(sem, n1, pn2, t1, t2);
-        sem->match.without_error_reporting--;
-        if (r == RESULT_ERROR) r = match_substructural(sem, n2, pn1, t2, t1);
-        break;
+    if (is_tvar(t1) || is_tvar(t2)) RETURN(match_tvar(sem, pn1, pn2, t1, t2, subtype));
+    if (subtype == SUBTYPE_TWO_WAY) RETURN(match_structural(sem, n1, n2, t1, t2));
+    if (subtype == SUBTYPE_ONE_WAY) RETURN(match_substructural(sem, n1, pn2, t1, t2));
+
+    sem->match.without_error_reporting++;
+    r = match_substructural(sem, n1, pn2, t1, t2);
+    sem->match.without_error_reporting--;
+
+    if (r == RESULT_ERROR) {
+        // swap(sem->call_check.i1, sem->call_check.i2);
+        r = match_substructural(sem, n2, pn1, t2, t1);
+        // swap(sem->call_check.i1, sem->call_check.i2);
     }
 
-    if (sem->match.applied_cast) {
+    done: {
+        reached(r);
+        #undef RETURN
+        sem->match.ongoing--;
+        if (!sem->match.applied_cast) return r;
         sem->match.applied_cast = 0;
-        r = RESULT_DEFER;
+        return RESULT_DEFER;
     }
-
-    sem->match.ongoing--;
-    return r;
 }
 
 // The following wrappers around match() use the nomenclature:
@@ -1050,6 +1459,205 @@ static Result match_nv (Sem *sem, Ast *n, Ast **v)    { return match(sem, &n, v,
 static Result match_nc (Sem *sem, Ast *n, Ast *c)     { return match(sem, &n, &c, try_get_type(n), try_get_type_t(c), SUBTYPE_TWO_WAY); }
 static Result match_tt (Sem *sem, Type *t1, Type *t2) { return match(sem, &sem->match.dummy1, &sem->match.dummy2, t1, t2, SUBTYPE_TWO_WAY); }
 static Result match_tv (Sem *sem, Type *t, Ast **v)   { return match(sem, &sem->match.dummy1, v, t, try_get_type_v(*v), SUBTYPE_ONE_WAY); }
+
+static IString *instantiate_poly_name (Sem *sem, IString *base, Ast *instantiator, U64 n) {
+    IString *path = get_file(instantiator)->path;
+    String name   = astr_fmt(sem->mem, "%.*s:%.*s:%lu:%lu", STR(*base), STR(*path), instantiator->pos.offset, n);
+    return intern_str(sem->interns, name);
+}
+
+static Ast *instantiate_poly_arg_helper (Ast *old_node, Ast *new_node, Void *context) {
+    Auto sem      = cast(Sem*, cast(Void**, context)[0]);
+    Auto info     = cast(MonoInfo*, cast(Void**, context)[1]);
+    Auto instance = cast(Ast*, cast(Void**, context)[2]);
+
+    if (new_node) {
+        new_node->flags &= ~(AST_IN_POLY_ARG_POSITION | AST_HAS_POLY_ARGS);
+        if (old_node->flags & AST_HAS_POLY_ARGS) array_push_lit(&info->instance_map, .oldn=old_node, .newn=new_node);
+        if (old_node->tag == AST_DOT) new_node->flags &= ~AST_IS_TYPE;
+        if ((old_node->tag == AST_CAST) && !cast(AstCast*, old_node)->to) {
+            assert_dbg(! (old_node->flags & AST_IN_POLY_ARG_POSITION));
+            // add_to_infer_list(sem, old_node, new_node);
+        }
+        return 0;
+    } else {
+        switch (old_node->tag) {
+        case AST_ARG_POLY_TYPE:  return instantiate_poly_arg(sem, old_node, info, instance);
+        // case AST_ARG_POLY_CODE:  return instantiate_poly_arg(sem, old_node, info, instance);
+        // case AST_ARG_POLY_VALUE: return instantiate_poly_arg(sem, old_node, info, instance);
+        default:                 return 0;
+        }
+    }
+}
+
+static Ast *instantiate_poly_arg (Sem *sem, Ast *arg, MonoInfo *info, Ast *instance) {
+    Scope *instance_scope = get_scope(instance);
+
+    switch (arg->tag) {
+    case AST_VAR_DEF: {
+        AstVarDef *n = cast(AstVarDef*, arg);
+        Ast *r = ast_alloc(sem->mem, AST_VAR_DEF, 0);
+        r->flags |= AST_IS_LOCAL_VAR;
+        r->flags |= AST_IS_FN_ARG;
+
+        r->pos = arg->pos;
+        cast(AstVarDef*, r)->name = n->name;
+        if (arg->flags & AST_HAS_POLY_ARGS) array_push_lit(&info->instance_map, .oldn=arg, .newn=r);
+
+        if (n->constraint) {
+            Void *ctx [] = { sem, info, instance };
+            cast(AstVarDef*, r)->constraint = ast_deep_copy(sem->mem, n->constraint, instantiate_poly_arg_helper, ctx);
+        } else {
+            Ast *c = ast_alloc(sem->mem, AST_DUMMY, AST_IS_TYPE);
+            c->pos = n->init->pos;
+            add_to_check_list(sem, c, instance_scope);
+            set_type(c, get_type(n->init));
+            cast(AstVarDef*, r)->constraint = c;
+        }
+
+        if (instance->tag == AST_FN) array_push(&cast(AstBaseFn*, instance)->inputs, r);
+        add_to_check_list(sem, r, instance_scope);
+        return r;
+    }
+
+    case AST_ARG_POLY_TYPE: {
+        TypeVar *t = cast(TypeVar*, get_type(arg));
+        TypeInstance *b = array_find_ref(&info->type_map, IT->var == t);
+        Ast *c = get_type_constructor(b->t);
+        Ast *r = ast_alloc(sem->mem, AST_DUMMY, AST_IS_POLYMORPH_INSTANCE | AST_IS_TYPE | AST_EVALED);
+
+        if (c) b->t = get_type(c);
+        b->instance = r;
+        r->pos = arg->pos;
+        add_to_check_list(sem, r, instance_scope);
+        scope_add(sem, instance_scope, cast(AstArgPolyType*, arg)->name, r, r);
+        array_push_lit(&info->instance_map, .oldn=arg, .newn=r);
+
+        if (! type_has_polyargs(b->t)) {
+            set_type(r, b->t);
+            bind_simple_untyped_lit_recursively(sem, b->t);
+        }
+
+        return r;
+    }
+
+    #if 0
+    case AST_ARG_POLY_VALUE: {
+        AstArgPolyValue *n = cast(AstArgPolyValue*, arg);
+        TypeVar *t = cast(TypeVar*, get_type(arg));
+        ValueInstance *b = array_find_ref(&info->value_map, IT->var == t);
+        Ast *r = ast_alloc(sem->mem, AST_VAR_DEF, AST_IS_POLYMORPH_INSTANCE | AST_CAN_EVAL);
+
+        r->pos = arg->pos;
+        cast(AstVarDef*, r)->name = n->name;
+        Void *ctx [] = { sem, info, instance };
+        cast(AstVarDef*, r)->constraint = (n->constraint->tag == AST_DUMMY) ? n->constraint : ast_deep_copy(sem->mem, n->constraint, instantiate_poly_arg_helper, ctx);
+
+        b->instance = r;
+        add_to_check_list(sem, r, instance_scope);
+        array_push_lit(&info->instance_map, .oldn=arg, .newn=r);
+        assert_dbg(b->val);
+        map_add(&sem->node_to_val, r->id, (Value){ .ptr=b->val });
+        return r;
+    }
+
+    case AST_ARG_POLY_CODE: {
+        TypeVar *t = cast(TypeVar*, get_type(arg));
+        ValueInstance *b = array_find_ref(&info->value_map, IT->var == t);
+        Ast *r = ast_alloc(sem->mem, AST_CALL_MACRO_ARG, 0);
+
+        r->pos = arg->pos;
+        cast(AstCallMacroArg*, r)->code = ((AstCallMacroArg*)*b->val)->code;
+        cast(AstCallMacroArg*, r)->parsed_ast = ((AstCallMacroArg*)*b->val)->parsed_ast;
+
+        b->instance = r;
+        add_to_check_list(sem, r, instance_scope);
+        scope_add(sem, instance_scope, cast(AstArgPolyCode*, arg)->name, r, r);
+        array_push_lit(&info->instance_map, .oldn=arg, .newn=r);
+        return r;
+    }
+    #endif
+
+    default: badpath;
+    }
+}
+
+static Ast *instantiate_polymorph (Sem *sem, MonoInfo *info, MonoInfo **out_instance_info) {
+    assert_dbg(sem->call_check.ongoing);
+
+    Ast *polymorph      = info->poly_info->node;
+    ArrayAst *instances = &info->poly_info->instances;
+    AstFlags is_macro   = (polymorph->flags & AST_IS_MACRO) ? AST_IS_MACRO_INSTANCE : 0;
+
+    if (! is_macro) { // Look for a cached instance:
+        sem->match.without_error_reporting++;
+        MonoInfo *prev = sem->call_check.i1;
+        sem->call_check.i1 = info;
+
+        array_iter (prev_instance, instances) {
+            MonoInfo *prev_info = sem_get_mono_info(sem, prev_instance);
+
+            array_iter (a, &info->type_map, *) {
+                TypeInstance *b = array_ref(&prev_info->type_map, ARRAY_IDX);
+                Result r = match_tt(sem, a->t, b->t);
+                assert_dbg(r != RESULT_DEFER);
+                if (r != RESULT_OK) goto continue_outer;
+            }
+
+            // array_iter (a, &info->value_map, *) {
+                // Ast *b = *array_ref(&prev_info->value_map, ARRAY_IDX)->val;
+                // Type *t = get_type(b);
+                // if (! (t->flags & TYPE_IS_PRIMITIVE)) goto continue_outer;
+                // if (! vm_value_match(t, get_const(sem, info, *a->val, 0), sem_get_const(sem, b))) goto continue_outer;
+            // }
+
+            sem->call_check.i1 = prev;
+            sem->match.without_error_reporting--;
+            *out_instance_info = prev_info;
+            return prev_instance;
+            continue_outer:;
+        }
+
+        sem->call_check.i1 = prev;
+        sem->match.without_error_reporting--;
+    }
+
+    AstTag tag     = (polymorph->tag == AST_RECORD_POLY) ? AST_RECORD : AST_FN;
+    Ast *fn_output = (tag == AST_FN) ? cast(AstBaseFn*, polymorph)->output : 0;
+    Ast *instance  = ast_alloc(sem->mem, tag, AST_IS_POLYMORPH_INSTANCE | is_macro);
+    instance->pos  = polymorph->pos;
+
+    if (tag == AST_FN) {
+        AstFnPoly *p = cast(AstFnPoly*, polymorph);
+        cast(AstFn*, instance)->name = instantiate_poly_name(sem, p->name, info->instantiator, instances->count);
+        if (fn_output && (fn_output->tag != AST_ARG_POLY_TYPE)) cast(AstBaseFn*, instance)->output = ast_deep_copy(sem->mem, fn_output, 0, 0);
+        array_iter (s, &p->statements) {
+            Ast *copy = ast_deep_copy(sem->mem, s, 0, 0);
+            array_push(&cast(AstFn*, instance)->statements, copy);
+        }
+    } else {
+        assert_dbg(tag == AST_RECORD);
+        AstRecordPoly *p = cast(AstRecordPoly*, polymorph);
+        cast(AstRecord*, instance)->name = instantiate_poly_name(sem, p->name, info->instantiator, instances->count);
+        array_iter (f, &p->members) {
+            Ast *copy = ast_deep_copy(sem->mem, f, 0, 0);
+            array_push(&cast(AstRecord*, instance)->members, copy);
+        }
+    }
+
+    add_to_check_list(sem, instance, get_scope(is_macro ? info->instantiator : polymorph));
+    map_add(&sem->mono_infos, instance->id, info);
+    array_push(instances, instance);
+
+    ArrayAst arg_instances;
+    array_init(&arg_instances, sem->mem);
+    array_iter (arg, info->poly_info->args) array_push(&arg_instances, instantiate_poly_arg(sem, arg, info, instance));
+    if (fn_output && (fn_output->tag == AST_ARG_POLY_TYPE)) cast(AstBaseFn*, instance)->output = instantiate_poly_arg(sem, fn_output, info, instance);
+    info->arg_instances = slice_from(&arg_instances, SliceAst);
+
+    *out_instance_info = info;
+    return instance;
+}
 
 static Void check_for_invalid_cycle_ (Sem *sem, AstTag tag, Ast *node, ArrayAst *path) {
     if (! (node->flags & AST_ADDED_TO_CHECK_LIST)) return;
@@ -1132,7 +1740,7 @@ static Result check_is_read_only (Sem *sem, Ast *n) {
     #undef RETURN
 }
 
-static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
+static Result check_call_args_layout (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
     if (call_args->count > target_args->count) {
         return error_nn(sem, caller, target, "Too many call args. Got %lu, but expected %lu.", call_args->count, target_args->count);
     }
@@ -1192,16 +1800,125 @@ static Result check_call_arg_layout (Sem *sem, Ast *target, ArrayAst *target_arg
     return RESULT_OK;
 }
 
-static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args) {
-    try(check_call_arg_layout(sem, target, target_args, caller, call_args));
+static Result check_call (Sem *sem, Ast *target, ArrayAst *target_args, Ast *caller, ArrayAst *call_args, Bool check_layout) {
+    Auto c = &sem->call_check;
 
-    array_iter (n1, target_args, *) {
-        Ast **n2 = array_ref(call_args, ARRAY_IDX);
-        Result r = match_nv(sem, *n1, n2);
-        if (r != RESULT_OK) return r;
+    assert_dbg(! c->i1);
+    assert_dbg(! c->ongoing);
+
+    if (target->flags & AST_IS_POLYMORPH) {
+        PolyInfo *poly_info = get_poly_info(sem, target);
+
+        array_iter_from (i, &poly_info->instances, poly_info->mark) {
+            MonoInfo *info = sem_get_mono_info(sem, i);
+            array_iter (x, &info->type_map, *)  try_get_type(x->instance);
+            array_iter (x, &info->value_map, *) if (! (x->instance->flags & AST_EVALED)) return RESULT_DEFER;
+            poly_info->mark++;
+        }
     }
 
-    return RESULT_OK;
+    if (check_layout) try(check_call_args_layout(sem, target, target_args, caller, call_args));
+    if (target->flags & (AST_IS_POLYMORPH | AST_IS_MACRO)) c->i1 = alloc_mono_info(sem, target, caller);
+
+    Result r = RESULT_OK;
+    reach(r);
+    #define RETURN(R) { r = R; goto done; }
+
+    c->ongoing          = true;
+    c->bound_var_to_var = true;
+    c->bound_var_to_val = true;
+
+    while (c->bound_var_to_var && c->bound_var_to_val) {
+        c->bound_var_to_var = false;
+        c->bound_var_to_val = false;
+
+        array_iter (argt, target_args) {
+            Ast **argc = array_ref(call_args, ARRAY_IDX);
+            r = (argt->tag == AST_ARG_POLY_TYPE) ? match_nc(sem, argt, *argc) : match_nv(sem, argt, argc);
+            if (r != RESULT_OK) RETURN(r);
+        }
+    }
+
+    array_iter (info, &c->mono_infos) {
+        if (array_find_ref(&info->value_map, !IT->val)) RETURN(error_unbound_polyvars(sem, caller, target));
+        if (array_find_ref(&info->type_map, !IT->t || is_tvar_type(IT->t))) RETURN(error_unbound_polyvars(sem, caller, target));
+    }
+
+    // array_iter (x, &c->values_to_match, *) {
+        // Type *t1; Value v1 = get_const(sem, x->i1, x->a, &t1);
+        // Type *t2; Value v2 = get_const(sem, x->i2, x->b, &t2);
+        // if (! vm_value_match(t1, v1, v2)) RETURN(error_nn(sem, x->a, x->b, "Value mismatch."));
+    // }
+
+    array_iter (info, &c->mono_infos) {
+        Scope *parent_instance = scope_of_instance(info->instantiator);
+        if (! parent_instance) continue;
+        MonoInfo *parent_info = sem_get_mono_info(sem, parent_instance->owner);
+        if (parent_info->depth >= MAX_RECURSIVE_INSTANTIATIONS) RETURN(error_n(sem, info->instantiator, "Too many recursive instantiations."));
+        info->depth = parent_info->depth + 1;
+    }
+
+    array_iter (info, &c->mono_infos) {
+        MonoInfo *instance_info = 0;
+        Ast *instance = instantiate_polymorph(sem, info, &instance_info);
+
+        if (instance_info != info) { // Cached instance used, so this MonoInfo is obsolete.
+            array_remove_fast(&c->mono_infos, ARRAY_IDX);
+            ARRAY_IDX--; // Because of the remove above.
+            array_iter (i, &c->mono_infos) array_iter (x, &i->type_map, *) if (x->i == info) x->i = instance_info;
+        }
+
+        array_iter (i, &instance_info->instance_map, *) {
+            array_iter (x, &c->untyped_lits, *) if (i->oldn == x->bind) { x->bind = i->newn; break; }
+            array_iter (x, &c->casts, *) {
+                if (i->oldn != x->to) continue;
+                x->to = (i->oldn->tag == AST_ARG_POLY_VALUE) ? cast(AstVarDef*, i->newn)->constraint : i->newn;
+                break;
+            }
+        }
+
+        if (info != c->i1) {
+            map_add(&sem->mono_infos, info->instantiator->id, info);
+            add_to_infer_list(sem, instance, info->instantiator);
+        }
+
+        sem_set_target(sem, info->instantiator, instance);
+    }
+
+    array_iter (info, &c->mono_infos) {
+        array_iter (x, &info->type_map, *) {
+            if (get_type(x->instance)) continue;
+            Ast *c = get_type_constructor(x->t);
+            Type *t = get_type(c);
+            Ast *b = is_tvar_fn(t) ? get_target(cast(TypeVar*, t)->node) : (x->i ? array_find_ref(&x->i->instance_map, IT->oldn == c)->newn : c);
+            add_to_infer_list(sem, b, x->instance);
+        }
+    }
+
+    done: {
+        c->ongoing = false;
+
+        if (r == RESULT_OK) {
+            array_iter (x, &c->casts, *)            implicit_cast(sem, x->from, x->to, x->to_type);
+            array_iter (x, &c->untyped_lits, *)     add_to_infer_list(sem, x->bind, x->lit);
+            array_iter (x, &c->simple_untyped_lits) x->flags &= ~TYPE_IS_UNTYPED_LIT;
+        } else {
+            array_iter (x, &c->untyped_lits, *) set_type(x->lit, x->tvar);
+            array_push_many(&c->mono_infos_pool, &c->mono_infos);
+        }
+
+        c->i1 = 0;
+        c->i2 = 0;
+        c->casts.count = 0;
+        c->mono_infos.count = 0;
+        c->untyped_lits.count = 0;
+        c->values_to_match.count = 0;
+        c->simple_untyped_lits.count = 0;
+
+        #undef RETURN
+        reached(r);
+        return r;
+    }
 }
 
 static Bool check_statement_returns (Sem *sem, Ast *node) {
@@ -1327,19 +2044,45 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_CALL: {
         Auto n = cast(AstCall*, node);
+        Ast *d = n->sem_edge;
+
+        if (d) { // Wait for poly instance to get typed:
+            if (d->tag == AST_FN) {
+                Ast *out = cast(AstBaseFn*, d)->output;
+                set_type(node, (out ? try_get_type(out) : sem->core_types.type_Void));
+            }
+
+            return RESULT_OK;
+        }
+
         Type *t = try_get_type(n->lhs);
+
+        if (t->tag == TYPE_FN) {
+            try_get_type_v(n->lhs); // Assert it's a value.
+            AstBaseFn *fn = cast(TypeFn*, t)->node;
+            if (cast(Ast*, fn)->flags & AST_IS_MACRO) return error_nn(sem, node, cast(Ast*, fn), "Cannot call macro using the parens operator (). Use the : operator.");
+            set_type(node, fn->output ? try_get_type(fn->output) : sem->core_types.type_Void);
+            return check_call(sem, cast(Ast*, fn), &fn->inputs, node, &n->args, true);
+        }
 
         if (t == sem->core_types.type_CFn) {
             set_type(node, sem->core_types.type_Top);
             return RESULT_OK;
-        } else {
-            if (t->tag != TYPE_FN) return error_nt(sem, n->lhs, t, "expected function.");
-            try_get_type_v(n->lhs); // Assert it's a value.
-
-            AstBaseFn *fn = cast(TypeFn*, t)->node;
-            set_type(node, fn->output ? try_get_type(fn->output) : sem->core_types.type_Void);
-            return check_call(sem, cast(Ast*, fn), &fn->inputs, node, &n->args);
         }
+
+        if (t->tag == TYPE_MISC) {
+            Ast *c = cast(TypeMisc*, t)->node;
+
+            if (c->flags & AST_IS_MACRO) {
+                return error_nn(sem, node, c, "Cannot call macro using the parens operator (). Use the : operator.");
+            } else if (c->tag == AST_FN_POLY) {
+                try(check_call(sem, c, &cast(AstBaseFn*, c)->inputs, node, &n->args, true));
+                if (n->lhs->tag == AST_IDENT) sem_set_target(sem, n->lhs, n->sem_edge);
+                return RESULT_DEFER; // Wait for poly instance to get typed.
+            }
+        }
+
+        return error_nt(sem, n->lhs, t, "expected function or poly-struct type.");
     }
 
     case AST_ENUM: {
@@ -1623,7 +2366,7 @@ static Result check_node (Sem *sem, Ast *node) {
 
         if ((t->flags & TYPE_IS_SPECIAL) || (t->tag == TYPE_OPTION)) return error_nt(sem, node, t, "which is an invalid operand to option type.");
 
-        set_type(node, alloc_type_option(sem, t));
+        set_type(node, alloc_type_option(sem, t, node));
         return RESULT_OK;
     }
 
@@ -1816,6 +2559,10 @@ static Result check_node (Sem *sem, Ast *node) {
     badpath;
 }
 
+static Void add_to_infer_list (Sem *sem, Ast *from, Ast *to) {
+    array_push_lit(&sem->infer_list, .from=from, .to=to);
+}
+
 // This is the entry point for semantically analyzing an ast.
 // It will recursively add the entire ast into the analyzer.
 static Void add_to_check_list (Sem *sem, Ast *n, Scope *scope) {
@@ -1867,6 +2614,14 @@ static Void check_nodes (Sem *sem) {
             if (sem->error_count) sem_panic(sem);
         }
 
+        array_iter (infer, &sem->infer_list, *) {
+            Type *t = get_type(infer->from);
+            if (!t || type_has_polyargs(t)) continue;
+            set_type(infer->to, t);
+            infer->to->flags |= (infer->from->flags & AST_IS_TYPE);
+            infer->from = 0; // Mark for removal.
+        }
+
         array_iter (n, &sem->eval_list) {
             eval(sem, n);
             if (sem->error_count) sem_panic(sem);
@@ -1874,12 +2629,14 @@ static Void check_nodes (Sem *sem) {
 
         U64 cn = sem->check_list.count;
         U64 en = sem->eval_list.count;
+        U64 in = sem->infer_list.count;
 
         Bool new_to_check = (prev_to_check < sem->check_list.count);
+        Bool inferred     = in - array_find_remove_all(&sem->infer_list, !IT.from);
         Bool checked      = cn - array_find_remove_all(&sem->check_list, IT->flags & AST_CHECKED);
         Bool evaled       = en - array_find_remove_all(&sem->eval_list, IT->flags & AST_EVALED);
 
-        if (!sem->found_a_sem_edge && !new_to_check && !checked && !evaled) break;
+        if (!sem->found_a_sem_edge && !new_to_check && !checked && !evaled && !inferred) break;
     }
 
     if (sem->check_list.count) error_no_progress(sem);
@@ -1930,6 +2687,13 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     array_init(&sem->globals, mem);
     array_init(&sem->eval_list, mem);
     array_init(&sem->check_list, mem);
+    array_init(&sem->infer_list, mem);
+    array_init(&sem->call_check.mono_infos, mem);
+    array_init(&sem->call_check.mono_infos_pool, mem);
+    array_init(&sem->call_check.simple_untyped_lits, mem);
+    array_init(&sem->call_check.casts, mem);
+    array_init(&sem->call_check.untyped_lits, mem);
+    array_init(&sem->call_check.values_to_match, mem);
 
     map_init(&sem->files, mem);
     map_init(&sem->type_def, mem);

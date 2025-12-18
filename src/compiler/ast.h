@@ -79,6 +79,7 @@ istruct (Interns);
     X(AST_RECORD, AstRecord, 0, AST_IS_TYPE | AST_CREATES_SCOPE)\
     X(AST_RECORD_LITERAL, AstRecordLiteral, 0, AST_IS_LITERAL)\
     X(AST_RECORD_LIT_INIT, AstRecordLitInit, 0, 0)\
+    X(AST_RECORD_POLY, AstRecordPoly, 0, AST_CREATES_SCOPE | AST_IS_POLYMORPH | AST_CAN_EVAL)\
     X(AST_RETURN, AstReturn, 0, 0)\
     X(AST_STRING_LITERAL, AstStringLiteral, 0, AST_IS_LITERAL)\
     X(AST_SUB, AstSub, AST_BASE_BINARY, 0)\
@@ -102,6 +103,7 @@ istruct (Interns);
     X(AST_FN, AstFn)\
     X(AST_FN_POLY, AstFnPoly)\
     X(AST_RECORD, AstRecord)\
+    X(AST_RECORD_POLY, AstRecordPoly)\
     X(AST_TYPE_ALIAS, AstTypeAlias)\
     X(AST_TYPE_DISTINCT, AstTypeDistinct)\
     X(AST_VAR_DEF, AstVarDef)
@@ -134,19 +136,21 @@ fenum (AstFlags, U64) {
     AST_EVALED                 = flag(4),
     AST_HAS_POLY_ARGS          = flag(5),
     AST_IN_POLY_ARG_POSITION   = flag(6),
-    AST_IN_STANDALONE_POSITION = flag(7),
-    AST_IS_FN_ARG              = flag(8),
-    AST_IS_GLOBAL_VAR          = flag(9),
-    AST_IS_LITERAL             = flag(10),
-    AST_IS_LOCAL_VAR           = flag(11),
-    AST_IS_LVALUE              = flag(12),
-    AST_IS_MACRO               = flag(13),
-    AST_IS_POLYMORPH           = flag(14),
-    AST_IS_READ_ONLY           = flag(15),
-    AST_IS_SEALED_SCOPE        = flag(16),
-    AST_IS_TYPE                = flag(17),
-    AST_MUST_EVAL              = flag(18),
-    AST_VISITED                = flag(19),
+    AST_IS_POLYMORPH_INSTANCE  = flag(7),
+    AST_IN_STANDALONE_POSITION = flag(8),
+    AST_IS_FN_ARG              = flag(9),
+    AST_IS_GLOBAL_VAR          = flag(10),
+    AST_IS_LITERAL             = flag(11),
+    AST_IS_LOCAL_VAR           = flag(12),
+    AST_IS_LVALUE              = flag(13),
+    AST_IS_MACRO_INSTANCE      = flag(14),
+    AST_IS_MACRO               = flag(15),
+    AST_IS_POLYMORPH           = flag(16),
+    AST_IS_READ_ONLY           = flag(17),
+    AST_IS_SEALED_SCOPE        = flag(18),
+    AST_IS_TYPE                = flag(19),
+    AST_MUST_EVAL              = flag(20),
+    AST_VISITED                = flag(21),
 
     // These flags are set by the Sem module.
     AST_SEM_FLAGS = AST_CHECKED | AST_ADDED_TO_CHECK_LIST,
@@ -238,6 +242,7 @@ istruct (AstOptionType)        { AstBaseUnary base; };
 istruct (AstRecord)            { Ast base; IString *name; ArrayAst members; };
 istruct (AstRecordLitInit)     { Ast base; IString *name; Ast *val, *sem_edge; };
 istruct (AstRecordLiteral)     { Ast base; Ast *lhs; ArrayAstRecordLitInit inits; };
+istruct (AstRecordPoly)        { Ast base; IString *name; ArrayAst members, args; };
 istruct (AstReturn)            { Ast base; Ast *result, *sem_edge; };
 istruct (AstStringLiteral)     { Ast base; IString *str; };
 istruct (AstSub)               { AstBaseBinary base; };
@@ -350,6 +355,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_RECORD:           AM(A, I, AstRecord, members); break;\
     case AST_RECORD_LITERAL:   FM(F, AstRecordLiteral, lhs); AM(A, I, AstRecordLiteral, inits); break;\
     case AST_RECORD_LIT_INIT:  FM(F, AstRecordLitInit, val); break;\
+    case AST_RECORD_POLY:      AM(A, I, AstRecordPoly, members); AM(A, I, AstRecordPoly, args); break;\
     case AST_RETURN:           FM(F, AstReturn, result); break;\
     case AST_TUPLE:            AM(A, I, AstTuple, members); break;\
     case AST_TYPE_ALIAS:       FM(F, AstTypeAlias, val); break;\

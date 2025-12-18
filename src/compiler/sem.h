@@ -52,7 +52,7 @@ istruct (TypeFloat)   { Type type; };
 istruct (TypeFn)      { Type type; AstBaseFn *node; };
 istruct (TypeInt)     { Type type; };
 istruct (TypeMisc)    { Type type; Ast *node; };
-istruct (TypeOption)  { Type type; Type *underlying; };
+istruct (TypeOption)  { Type type; Ast *node; Type *underlying; };
 istruct (TypeRecord)  { Type type; AstRecord *node; };
 istruct (TypeString)  { Type type; };
 istruct (TypeTop)     { Type type; };
