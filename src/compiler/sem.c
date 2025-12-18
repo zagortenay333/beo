@@ -1107,10 +1107,10 @@ static Void bind_simple_untyped_lit_recursively (Sem *sem, Type *t) {
     }
 }
 
-// This is a type variable assigned to a struct call whose
+// This is a type variable assigned to a record call whose
 // arguments contain type variables:
 //
-//     struct Foo ($T) {}
+//     record Foo ($T) {}
 //
 //     fn foo (x: Foo($T)) {}
 //                ^^^^^^^------ tvar_call
