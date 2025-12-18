@@ -20,6 +20,9 @@ fn main {
         fn foo (x: Foo($T), $R, y: Float) {
             .print(x.y);
             .print(y);
+
+            var z: R = 3.3;
+            .print(y);
         }
 
         foo(x, Float, 42.0);
