@@ -17,11 +17,12 @@ fn main {
 
         var x = Foo(Int){ x = 42, y = [1, 2] };
 
-        fn foo (x: Foo($T)) {
+        fn foo (x: Foo($T), $R, y: Float) {
             .print(x.y);
+            .print(y);
         }
 
-        foo(x);
+        foo(x, Float, 42.0);
     }
 }
 

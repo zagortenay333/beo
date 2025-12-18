@@ -370,7 +370,11 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         VmRegOp result = needs_result_move ? reg_push(em) : result_reg;
 
         VmRegOp fn_reg = emit_expression(em, n->lhs, reg_push(em));
-        array_iter (arg, &n->args) emit_expression(em, arg, reg_push(em));
+
+        array_iter (arg, &n->args) {
+            if (arg->flags & AST_IS_TYPE) continue;
+            emit_expression(em, arg, reg_push(em));
+        }
 
         SemCoreTypes *core_types = sem_get_core_types(em->vm->sem->sem);
 
