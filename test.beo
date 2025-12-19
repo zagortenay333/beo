@@ -25,6 +25,7 @@ fn main {
     test_tuples();
     test_option_types();
     test_while();
+    test_import();
     test_polymorphism();
     register_stress_test();
 }
@@ -304,6 +305,19 @@ fn test_var_defs {
     .print(a6);
     .print(.nan());
     .print(.inf());
+}
+
+fn test_import {
+    test_start(.fn_name());
+
+    import arr = "std/array.beo";
+
+    var x = [1, 2, 3];
+    arr.push(x, 4);
+    .print(x);
+
+    arr.dummy = 42;
+    .print(arr.dummy);
 }
 
 fn test_records {
