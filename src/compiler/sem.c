@@ -2101,15 +2101,23 @@ static Result check_node (Sem *sem, Ast *node) {
 
     case AST_IMPORT_FFI: {
         Auto n = cast(AstImportFfi*, node);
+        Type *t = try_get_type_v(n->path_gen);
 
-        FfiModule *module = array_find_ref(&sem->vm->ffi_modules, str_match(IT->name, *n->name));
+        if (t->tag != TYPE_STRING) return error_nt(sem, node, t, "expected String type.");
+        if (! (n->path_gen->flags & AST_EVALED)) return RESULT_DEFER;
+
+        String path = cast(VmObjString*, sem_get_const_val(sem, n->path_gen).obj)->string;
+        n->path = intern_str(sem->interns, path);
+
+        FfiModule *module = array_find_ref(&sem->vm->ffi_modules, str_match(IT->name, path));
         if (! module) return error_n(sem, node, "Reference to undeclared ffi module.");
 
-        Type *t = alloc_type(sem, TYPE_FFI);
-        cast(TypeFfi*, t)->name = module->name;
-        cast(TypeFfi*, t)->obj  = module->obj;
-        set_type(node, t);
-        scope_add(sem, sem->autoimports, n->name, node, node);
+        scope_add(sem, get_scope(node), n->name, node, node);
+
+        Type *type = alloc_type(sem, TYPE_FFI);
+        cast(TypeFfi*, type)->name = module->name;
+        cast(TypeFfi*, type)->obj  = module->obj;
+        set_type(node, type);
 
         return RESULT_OK;
     }

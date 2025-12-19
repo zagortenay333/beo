@@ -1,4 +1,4 @@
-import:ffi array;
+import:ffi array = "array";
 
 fn push (x: []$T, y: T) {
     array.push(x, y);

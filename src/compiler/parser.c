@@ -1212,6 +1212,9 @@ static Ast *parse_import_ffi (Parser *par) {
     lex_eat_this(lex, TOKEN_IMPORT);
     parse_attributes(cast(Ast*, node)->id, eat_attribute(ffi));
     node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '=');
+    node->path_gen = parse_expression(par, 0);
+    node->path_gen->flags |= AST_MUST_EVAL;
     lex_eat_this(lex, ';');
     return complete_node(par, node);
 }
