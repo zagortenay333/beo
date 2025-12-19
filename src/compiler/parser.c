@@ -1195,6 +1195,17 @@ static Ast *parse_type_distinct (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_import (Parser *par) {
+    Auto node = make_node(par, AstImport);
+    lex_eat_this(lex, TOKEN_IMPORT);
+    node->name = lex_eat_this(lex, TOKEN_IDENT)->str;
+    lex_eat_this(lex, '=');
+    node->path_gen = parse_expression(par, 0);
+    node->path_gen->flags |= AST_MUST_EVAL;
+    lex_eat_this(lex, ';');
+    return complete_node(par, node);
+}
+
 static Ast *parse_statement (Parser *par) {
     Ast *result = 0;
 
@@ -1202,6 +1213,7 @@ static Ast *parse_statement (Parser *par) {
     case TOKEN_EOF: return 0;
     case ';':            while (lex_try_eat(lex, ';')); return parse_statement(par);
     case '{':            result = parse_block(par); break;
+    case TOKEN_IMPORT:   result = parse_import(par); break;
     case TOKEN_DO:       result = parse_block(par); break;
     case TOKEN_BREAK:    result = parse_break(par); break;
     case TOKEN_CONTINUE: result = parse_continue(par); break;
@@ -1241,6 +1253,7 @@ static Ast *parse_top_statement (Parser *par) {
 
     switch (lex_peek(lex)->tag) {
     case ';':          while (lex_try_eat(lex, ';')); result = parse_top_statement(par); break;
+    case TOKEN_IMPORT: result = parse_import(par); break;
     case TOKEN_ENUM:   result = parse_enum(par); break;
     case TOKEN_RECORD: result = lex_try_peek_nth(lex, 3, '(') ? parse_record_poly(par) : parse_record(par); break;
     case TOKEN_FN:     result = parse_fn(par, false); break;

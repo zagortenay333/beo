@@ -2082,6 +2082,23 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_IMPORT: {
+        Auto n = cast(AstImport*, node);
+        Type *t = try_get_type_v(n->path_gen);
+
+        if (t->tag != TYPE_STRING) return error_nt(sem, node, t, "expected String type.");
+        if (! (n->path_gen->flags & AST_EVALED)) return RESULT_DEFER;
+
+        String path = cast(VmObjString*, sem_get_const_val(sem, n->path_gen).obj)->string;
+        n->path = intern_str(sem->interns, path);
+        import_file(sem, n->path, node);
+
+        scope_add(sem, get_scope(node), n->name, node, node);
+        set_type(node, alloc_type_misc(sem, node));
+
+        return RESULT_OK;
+    }
+
     case AST_DEFER: {
         sem_set_target(sem, node, node->sem_scope->owner);
         return RESULT_OK;
@@ -2138,7 +2155,7 @@ static Result check_node (Sem *sem, Ast *node) {
                 return error_nn(sem, node, c, "Cannot call macro using the parens operator (). Use the : operator.");
             } else if (c->tag == AST_FN_POLY) {
                 try(check_call(sem, c, &cast(AstBaseFn*, c)->inputs, node, &n->args, true));
-                if (n->lhs->tag == AST_IDENT) sem_set_target(sem, n->lhs, n->sem_edge);
+                if ((n->lhs->tag == AST_IDENT) || (n->lhs->tag == AST_DOT)) sem_set_target(sem, n->lhs, n->sem_edge);
                 return RESULT_DEFER; // Wait for poly instance to get typed.
             } else if (c->tag == AST_RECORD_POLY) {
                 node->flags |= AST_IS_TYPE;
@@ -2281,6 +2298,14 @@ static Result check_node (Sem *sem, Ast *node) {
             if (! d) return RESULT_DEFER;
             Type *t = try_get_type(get_scope(d)->owner);
             set_type(node, t);
+        } else if (t->tag == TYPE_MISC && cast(TypeMisc*, t)->node->tag == AST_IMPORT) {
+            AstImport *i = cast(AstImport*, cast(TypeMisc*, t)->node);
+            Ast *f = cast(Ast*, map_get_assert(&sem->files, i->path));
+            Ast *d = scope_lookup_outside_in(sem, get_scope(f), n->rhs, node);
+            if (!d || !get_type(d)) return RESULT_DEFER;
+            set_type(node, get_type(d));
+            node->flags |= d->flags & (AST_IS_TYPE | AST_IS_LVALUE);
+            return RESULT_OK;
         } else {
             if (t->tag != TYPE_RECORD) return error_n(sem, n->lhs, "Invalid lhs for dot operator.");
             try_get_type_v(n->lhs); // Assert it's a value.

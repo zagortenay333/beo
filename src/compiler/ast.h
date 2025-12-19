@@ -61,6 +61,7 @@ istruct (Interns);
     X(AST_GREATER_EQUAL, AstGreaterEqual, AST_BASE_BINARY, 0)\
     X(AST_IDENT, AstIdent, 0, AST_IS_LVALUE)\
     X(AST_IF, AstIf, 0, 0)\
+    X(AST_IMPORT, AstImport, 0, 0)\
     X(AST_INDEX, AstIndex, 0, 0)\
     X(AST_INTERFACE, AstInterface, 0, 0)\
     X(AST_INT_LITERAL, AstIntLiteral, 0, AST_IS_LITERAL)\
@@ -224,6 +225,7 @@ istruct (AstGreater)           { AstBaseBinary base; };
 istruct (AstGreaterEqual)      { AstBaseBinary base; };
 istruct (AstIdent)             { Ast base; IString *name; Ast *sem_edge; };
 istruct (AstIf)                { Ast base; Ast *cond, *then_arm, *else_arm; };
+istruct (AstImport)            { Ast base; Ast *path_gen; IString *path, *name; };
 istruct (AstIndex)             { Ast base; Ast *lhs, *idx, *sem_edge; };
 istruct (AstInterface)         { Ast base; IString *name; };
 istruct (AstIntLiteral)        { Ast base; I64 val; };
@@ -350,6 +352,7 @@ SrcPos  ast_trimmed_pos (Interns *, Ast *);
     case AST_FN:               AM(A, I, AstFn, statements); break;\
     case AST_FN_POLY:          AM(A, I, AstFnPoly, statements); break;\
     case AST_IF:               FM(F, AstIf, cond); FM(F, AstIf, then_arm); FM(F, AstIf, else_arm); break;\
+    case AST_IMPORT:           FM(F, AstImport, path_gen); break;\
     case AST_INDEX:            FM(F, AstIndex, lhs); FM(F, AstIndex, idx); break;\
     case AST_NOTE:             FM(F, AstNote, val); break;\
     case AST_RECORD:           AM(A, I, AstRecord, members); break;\

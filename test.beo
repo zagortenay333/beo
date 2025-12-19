@@ -1,9 +1,12 @@
 fn main {
+    import arr = "std/array.beo";
 
-    // {
-    //     fn foo (x: ?$T) { }
-    //     foo(42);
-    // }
+    var x = [1, 2, 3];
+    arr.push(x, 4);
+    .print(x);
+
+    arr.dummy = 42;
+    .print(arr.dummy);
 }
 
 /*

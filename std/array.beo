@@ -1,0 +1,5 @@
+fn push (x: []$T, y: T) {
+    array.push(x, y);
+}
+
+var dummy = 0; // For testing only.

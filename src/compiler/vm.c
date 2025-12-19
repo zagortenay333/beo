@@ -232,7 +232,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
     assert_dbg((pref == -1) || (pref >= 0 && pref <= UINT8_MAX));
     VmRegOp result_reg = (pref == -1) ? reg_push(em) : pref;
 
-    // @todo If we ever get defer, the prev_debug_node var is 
+    // @todo If we ever get defer, the prev_debug_node var is
     // a good candidate because in the AST_IDENT and AST_CALL
     // handling code below we have early returns due to the
     // way we handle register allocation.
@@ -362,6 +362,18 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
             emit_bytes(em, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
             reg_pop(em);
+        } else if (t->tag == TYPE_MISC) {
+            assert_dbg(cast(TypeMisc*, t)->node->tag == AST_IMPORT);
+
+            if (n->sem_edge->tag == AST_FN) {
+                U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, n->sem_edge));
+                emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
+            } else if (n->sem_edge->flags & AST_IS_GLOBAL_VAR) {
+                I64 global_idx = get_global_from_ast(em->vm, n->sem_edge);
+                emit_bytes(em, VM_OP_GLOBAL_GET, result_reg, ENCODE_U32(global_idx));
+            } else {
+                badpath;
+            }
         } else {
             badpath;
         }
@@ -514,6 +526,7 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
     case AST_FN: break;
     case AST_ENUM: break;
     case AST_RECORD: break;
+    case AST_IMPORT: break;
     case AST_FN_POLY: break;
     case AST_RECORD_POLY: break;
     case AST_TYPE_ALIAS: break;
@@ -569,11 +582,20 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
             reg_pop(em);
         } else if (n->op1->tag == AST_DOT) {
             Auto lhs = cast(AstDot*, n->op1);
-            VmRegOp rec_reg = emit_expression(em, lhs->lhs, -1);
-            VmRegOp key_reg = emit_const_string(em, *lhs->rhs, reg_push(em));
-            VmRegOp val_reg = emit_rhs(-1);
-            emit_bytes(em, VM_OP_RECORD_SET, rec_reg, key_reg, val_reg);
-            reg_pop(em);
+
+            if (sem_get_type(sem, lhs->lhs)->tag == TYPE_RECORD) {
+                VmRegOp rec_reg = emit_expression(em, lhs->lhs, -1);
+                VmRegOp key_reg = emit_const_string(em, *lhs->rhs, reg_push(em));
+                VmRegOp val_reg = emit_rhs(-1);
+                emit_bytes(em, VM_OP_RECORD_SET, rec_reg, key_reg, val_reg);
+                reg_pop(em);
+            } else {
+                assert_dbg(sem_get_type(sem, lhs->lhs)->tag == TYPE_MISC);
+                assert_dbg(lhs->sem_edge->flags & AST_IS_GLOBAL_VAR);
+                VmRegOp val_reg = emit_rhs(-1);
+                U32 global_idx  = get_global_from_ast(em->vm, lhs->sem_edge);
+                emit_bytes(em, VM_OP_GLOBAL_SET, val_reg, ENCODE_U32(global_idx));
+            }
         } else {
             badpath;
         }
