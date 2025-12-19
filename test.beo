@@ -17,7 +17,7 @@ fn main {
 
         var x = Foo(Int){ x = 42, y = [1, 2] };
 
-        fn foo (x: Foo($T), $R, y: Float) {
+        fn foo (x: Foo($T), $R, y: []R) {
             .print(x.y);
             .print(y);
 
@@ -25,8 +25,36 @@ fn main {
             .print(z);
         }
 
-        foo(x, Float, 42.0);
+        foo(x, Float, [42.0, 3.3]);
     }
+
+    {
+        fn foo (x: ($T, $R), y: T, z: R) {
+            .print(x);
+            .print(y);
+            .print(z);
+        }
+
+        foo((42, "hello"), 69, "there");
+    }
+
+    {
+        fn foo (x: Fn ($T) -> T, y: T) {
+            .print(x(y));
+        }
+
+        fn bar (x: $T) -> T {
+            return x;
+        }
+
+        foo(bar, 42.3);
+        foo(bar, "hi sailor");
+    }
+
+    // {
+    //     fn foo (x: ?$T) { }
+    //     foo(42);
+    // }
 }
 
 /*

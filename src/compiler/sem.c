@@ -2365,16 +2365,33 @@ static Result check_node (Sem *sem, Ast *node) {
         Auto n = cast(AstIdent*, node);
         Ast *d = n->sem_edge;
 
-        if (! d) {
+        if (d) {
+            if (get_type(node) && (d->tag == AST_FN_POLY)) return RESULT_DEFER;
+        } else {
             d = scope_lookup_inside_out(sem, get_scope(node), n->name, node);
             if (! d) return RESULT_DEFER;
         }
 
         Type *dt = try_get_type(d);
 
-        set_type(node, dt);
-        node->flags |= (d->flags & AST_IS_TYPE);
-        return RESULT_OK;
+        if (!(node->flags & AST_IN_POLY_ARG_POSITION) && is_tvar_type(dt)) {
+            return error_nn(sem, node, d, "Cannot reference a polymorphic expression from this position.");
+        } else if (d->tag == AST_FN_POLY) {
+            if (node->flags & AST_IN_STANDALONE_POSITION) {
+                set_type(node, dt);
+            } else {
+                ArrayAst *a = &cast(AstBaseFn*, d)->inputs;
+                U64 i = array_find(a, (IT->tag == AST_ARG_POLY_TYPE) || (IT->tag == AST_ARG_POLY_VALUE));
+                if (i != ARRAY_NIL_IDX) return error_n(sem, node, "Polymorphic functions with comptime arguments cannot be assigned.");
+                set_type(node, alloc_type_var(sem, node, TYPE_IS_TVAR_FN));
+            }
+
+            return RESULT_DEFER;
+        } else {
+            set_type(node, dt);
+            node->flags |= (d->flags & AST_IS_TYPE);
+            return RESULT_OK;
+        }
     }
 
     case AST_VAR_DEF: {
@@ -2502,6 +2519,7 @@ static Result check_node (Sem *sem, Ast *node) {
                 set_type(node, alloc_type_misc(sem, node));
                 return RESULT_OK;
             } else {
+                sem_print_node_out(sem, node);
                 set_type(node, alloc_type_var(sem, node, TYPE_IS_TVAR_FN));
                 U64 i = array_find(&n->inputs, (IT->tag == AST_ARG_POLY_TYPE) || (IT->tag == AST_ARG_POLY_VALUE));
                 return (i == ARRAY_NIL_IDX) ? RESULT_DEFER : error_n(sem, node, "Polymorphic functions with comptime arguments cannot be assigned.");

@@ -18,6 +18,7 @@ istruct (Parser) {
     Interns *interns;
     Lexer *lexer;
     Bool brace_ends_expression;
+    Bool poly_type_allowed;
     Array(ArgContext*) arg_context_pool;
     Array(ArgContext*) arg_context_stack;
     Map(AstId, ArrayAstNote*) notes;
@@ -378,6 +379,8 @@ static Ast *make_poly_type_arg (Parser *par, Ast *parent, IString *name) {
 }
 
 static Ast *parse_poly_type (Parser *par, Bool init_allowed) {
+    if (! par->poly_type_allowed) return 0;
+
     Auto node = make_node(par, AstArgPolyType);
 
     lex_eat_this(lex, '$');
@@ -546,6 +549,9 @@ static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed) {
     ArgContext *ctx = push_arg_context(par);
     if (! lex_try_eat(lex, '(')) return ctx;
 
+    Bool prev = par->poly_type_allowed;
+    par->poly_type_allowed = true;
+
     while (true) {
         Ast *arg = 0;
         TokenTag tok = lex_peek(lex)->tag;
@@ -567,6 +573,7 @@ static ArgContext *parse_args (Parser *par, Bool runtime_args_allowed) {
         if (! lex_try_eat(lex, ',')) break;
     }
 
+    par->poly_type_allowed = prev;
     lex_eat_this(lex, ')');
     return ctx;
 }
@@ -592,6 +599,7 @@ static Ast *parse_fn (Parser *par, Bool as_expression) {
         n->name = name;
         parse_block_out(par, &n->statements);
         array_iter (arg, &ctx->args) mark_poly_arg_position(par, cast(Ast*, node), arg);
+        mark_poly_arg_position(par, cast(Ast*, node), node->output);
     } else {
         AstFn *n = cast(AstFn*, node);
         n->name = name;
@@ -770,6 +778,7 @@ static Ast *parse_record_literal (Parser *par, Ast *lhs) {
 static Ast *parse_call (Parser *par, Ast *lhs) {
     Auto node = make_node_lhs(par, AstCall, lhs);
     node->lhs = lhs;
+    mark_standalone_position(par, node->lhs);
     lex_eat_this(lex, '(');
 
     while (true) {
