@@ -49,6 +49,7 @@ fn main {
 
         foo(bar, 42.3);
         foo(bar, "hi sailor");
+        foo(bar, [1, 2, 3]);
     }
 
     // {
