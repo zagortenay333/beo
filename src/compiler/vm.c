@@ -357,6 +357,11 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             VmReg reg = sem_get_const_val(sem, n->sem_edge);
             assert_dbg(reg.tag == VM_REG_INT);
             emit_const(em, result_reg, reg);
+        } else if (t->tag == TYPE_FFI) {
+            VmRegOp rec_reg = emit_expression(em, n->lhs, -1);
+            VmRegOp key_reg = emit_const_string(em, *n->rhs, reg_push(em));
+            emit_bytes(em, VM_OP_RECORD_GET, rec_reg, key_reg, result_reg);
+            reg_pop(em);
         } else {
             badpath;
         }
@@ -368,17 +373,23 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         Bool needs_result_move = (result_reg != em->next_reg - 1);
         VmRegOp result = needs_result_move ? reg_push(em) : result_reg;
 
-        VmRegOp fn_reg = emit_expression(em, n->lhs, reg_push(em));
+        VmRegOp fn_ptr = reg_push(em);
+        VmRegOp fn_reg = emit_expression(em, n->lhs, fn_ptr);
+        em->next_reg   = fn_ptr + 1;
 
+        U64 arg_count = 0;
         array_iter (arg, &n->args) {
             if (arg->flags & AST_IS_TYPE) continue;
-            emit_expression(em, arg, reg_push(em));
+            VmRegOp arg_reg = reg_push(em);
+            emit_expression(em, arg, arg_reg);
+            em->next_reg = arg_reg + 1;
+            arg_count++;
         }
 
         SemCoreTypes *core_types = sem_get_core_types(em->vm->sem->sem);
 
         if (sem_get_type(em->vm->sem->sem, n->lhs) == core_types->type_CFn) {
-            emit_bytes(em, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, n->args.count));
+            emit_bytes(em, VM_OP_CALL_FFI, fn_reg, 2 + cast(U8, arg_count));
         } else {
             emit_bytes(em, VM_OP_CALL, fn_reg);
         }

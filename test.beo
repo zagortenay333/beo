@@ -52,6 +52,21 @@ fn main {
         foo(bar, [1, 2, 3]);
     }
 
+    {
+        fn push (x: []$T, y: T) {
+            array.push(x, y);
+        }
+
+        var x = [1, 2, 3];
+        var y = ["hi", "there"];
+
+        push(x, 4);
+        push(y, "sailor");
+
+        .print(x);
+        .print(y);
+    }
+
     // {
     //     fn foo (x: ?$T) { }
     //     foo(42);

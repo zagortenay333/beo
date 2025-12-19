@@ -2118,17 +2118,17 @@ static Result check_node (Sem *sem, Ast *node) {
 
         Type *t = try_get_type(n->lhs);
 
+        if (t == sem->core_types.type_CFn) {
+            set_type(node, sem->core_types.type_Top);
+            return RESULT_OK;
+        }
+
         if (t->tag == TYPE_FN) {
             try_get_type_v(n->lhs); // Assert it's a value.
             AstBaseFn *fn = cast(TypeFn*, t)->node;
             if (cast(Ast*, fn)->flags & AST_IS_MACRO) return error_nn(sem, node, cast(Ast*, fn), "Cannot call macro using the parens operator (). Use the : operator.");
             set_type(node, fn->output ? try_get_type(fn->output) : sem->core_types.type_Void);
             return check_call(sem, cast(Ast*, fn), &fn->inputs, node, &n->args, true);
-        }
-
-        if (t == sem->core_types.type_CFn) {
-            set_type(node, sem->core_types.type_Top);
-            return RESULT_OK;
         }
 
         if (t->tag == TYPE_MISC) {
