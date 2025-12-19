@@ -62,6 +62,7 @@ istruct (Interns);
     X(AST_IDENT, AstIdent, 0, AST_IS_LVALUE)\
     X(AST_IF, AstIf, 0, 0)\
     X(AST_IMPORT, AstImport, 0, 0)\
+    X(AST_IMPORT_FFI, AstImportFfi, 0, 0)\
     X(AST_INDEX, AstIndex, 0, 0)\
     X(AST_INTERFACE, AstInterface, 0, 0)\
     X(AST_INT_LITERAL, AstIntLiteral, 0, AST_IS_LITERAL)\
@@ -226,6 +227,7 @@ istruct (AstGreaterEqual)      { AstBaseBinary base; };
 istruct (AstIdent)             { Ast base; IString *name; Ast *sem_edge; };
 istruct (AstIf)                { Ast base; Ast *cond, *then_arm, *else_arm; };
 istruct (AstImport)            { Ast base; Ast *path_gen; IString *path, *name; };
+istruct (AstImportFfi)         { Ast base; IString *name; };
 istruct (AstIndex)             { Ast base; Ast *lhs, *idx, *sem_edge; };
 istruct (AstInterface)         { Ast base; IString *name; };
 istruct (AstIntLiteral)        { Ast base; I64 val; };

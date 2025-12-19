@@ -24,6 +24,7 @@ istruct (VmObj);
     X(VM_OP_CONST_GET)\
     X(VM_OP_DIV)\
     X(VM_OP_EQUAL)\
+    X(VM_OP_FFI_GET)\
     X(VM_OP_GLOBAL_GET)\
     X(VM_OP_GLOBAL_SET)\
     X(VM_OP_GREATER)\

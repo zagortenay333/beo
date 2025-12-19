@@ -148,6 +148,19 @@ static U32 get_global_from_ast (Vm *vm, Ast *ast) {
     badpath;
 }
 
+// Returns index into vm->ffi_modules.
+static U32 get_ffi_module_idx (Vm *vm, String name) {
+    assert_always(vm->ffi_modules.count <= UINT32_MAX);
+
+    array_iter (module, &vm->ffi_modules, *) {
+        if (str_match(module->name, name)) {
+            return cast(U32, ARRAY_IDX);
+        }
+    }
+
+    badpath;
+}
+
 static Void record_debug_info (Emitter *em) {
     array_ensure_count(&em->vm->debug_info, em->vm->instructions.count + 1, true);
     array_set(&em->vm->debug_info, em->vm->instructions.count, em->debug_node);
@@ -435,6 +448,9 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         if (def->tag == AST_FN) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
             emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
+        } else if (def->tag == AST_IMPORT_FFI) {
+            U32 idx = get_ffi_module_idx(em->vm, *cast(AstImportFfi*, def)->name);
+            emit_bytes(em, VM_OP_FFI_GET, result_reg, ENCODE_U32(idx));
         } else if (def->flags & AST_IS_LOCAL_VAR) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
             assert_dbg(found);
@@ -528,8 +544,9 @@ static Void emit_statement (Emitter *em, Ast *stmt) {
     case AST_RECORD: break;
     case AST_IMPORT: break;
     case AST_FN_POLY: break;
-    case AST_RECORD_POLY: break;
+    case AST_IMPORT_FFI: break;
     case AST_TYPE_ALIAS: break;
+    case AST_RECORD_POLY: break;
     case AST_TYPE_DISTINCT: break;
 
     case AST_BLOCK: {
@@ -858,6 +875,14 @@ Void vm_print (Vm *vm, Bool show_source) {
                 print_reg(vm, val, false, false);
                 printf(">\n");
             } break;
+
+            case VM_OP_FFI_GET: {
+                VmRegOp result_reg = cur[1];
+                U32 val_idx = read_u32(&cur[2]);
+                FfiModule *module = array_ref(&vm->ffi_modules, val_idx);
+                cur += 6;
+                printf("r%i = ffi<%u: %.*s>\n", result_reg, val_idx, STR(module->name));
+            } break;
             }
 
             if (show_source) {
@@ -914,6 +939,7 @@ static Void gc_run (Vm *vm) {
 
         array_iter (reg, &vm->globals, *)   if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
         array_iter (reg, &vm->constants, *) if (reg->tag == VM_REG_OBJ) array_push(&work_set, reg->obj);
+        array_iter (module, &vm->ffi_modules, *) array_push(&work_set, cast(VmObj*, module->obj));
     }
 
     while (work_set.count) {
@@ -1262,6 +1288,14 @@ Bool vm_run (Vm *vm) {
             VmReg *out  = get_reg(vm, cr, pc[1]);
             U32 val_idx = read_u32(&pc[2]);
             *out = array_get(&vm->constants, val_idx);
+            cr->pc += 6;
+        } break;
+
+        case VM_OP_FFI_GET: {
+            VmReg *out  = get_reg(vm, cr, pc[1]);
+            U32 val_idx = read_u32(&pc[2]);
+            out->obj = cast(VmObj*, array_ref(&vm->ffi_modules, val_idx)->obj);
+            out->tag = VM_REG_OBJ;
             cr->pc += 6;
         } break;
 

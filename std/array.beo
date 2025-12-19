@@ -1,4 +1,7 @@
+import:ffi array;
+
 fn push (x: []$T, y: T) {
+
     array.push(x, y);
 }
 

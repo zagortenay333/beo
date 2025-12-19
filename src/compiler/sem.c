@@ -2099,6 +2099,21 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_IMPORT_FFI: {
+        Auto n = cast(AstImportFfi*, node);
+
+        FfiModule *module = array_find_ref(&sem->vm->ffi_modules, str_match(IT->name, *n->name));
+        if (! module) return error_n(sem, node, "Reference to undeclared ffi module.");
+
+        Type *t = alloc_type(sem, TYPE_FFI);
+        cast(TypeFfi*, t)->name = module->name;
+        cast(TypeFfi*, t)->obj  = module->obj;
+        set_type(node, t);
+        scope_add(sem, sem->autoimports, n->name, node, node);
+
+        return RESULT_OK;
+    }
+
     case AST_DEFER: {
         sem_set_target(sem, node, node->sem_scope->owner);
         return RESULT_OK;
@@ -2866,17 +2881,17 @@ Sem *sem_new (Mem *mem, Vm *vm, Interns *interns) {
     }
 
     // Add ffi functions to the autoimports scope:
-    array_iter (it, &vm->ffi_modules, *) {
-        Type *t = alloc_type(sem, TYPE_FFI);
-        cast(TypeFfi*, t)->name = it->name;
-        cast(TypeFfi*, t)->obj  = it->obj;
+    // array_iter (it, &vm->ffi_modules, *) {
+    //     Type *t = alloc_type(sem, TYPE_FFI);
+    //     cast(TypeFfi*, t)->name = it->name;
+    //     cast(TypeFfi*, t)->obj  = it->obj;
 
-        Ast *n = ast_alloc(sem->mem, AST_DUMMY, AST_IS_GLOBAL_VAR|AST_MUST_EVAL|AST_EVALED);
-        add_to_check_list(sem, n, sem->autoimports);
-        set_type(n, t);
-        scope_add(sem, sem->autoimports, intern_str(sem->interns, it->name), n, n);
-        set_const_val(sem, n, (VmReg){ .tag=VM_REG_OBJ, .obj=cast(VmObj*, it->obj) });
-    }
+    //     Ast *n = ast_alloc(sem->mem, AST_DUMMY, AST_IS_GLOBAL_VAR|AST_EVALED);
+    //     add_to_check_list(sem, n, sem->autoimports);
+    //     set_type(n, t);
+    //     scope_add(sem, sem->autoimports, intern_str(sem->interns, it->name), n, n);
+    //     set_const_val(sem, n, (VmReg){ .tag=VM_REG_OBJ, .obj=cast(VmObj*, it->obj) });
+    // }
 
     return sem;
 }

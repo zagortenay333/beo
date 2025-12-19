@@ -110,7 +110,8 @@ istruct (Interns);
 // the lexer will emit a TOKEN_IDENT for each of these,
 // but in certain contexts they have special meaning.
 #define EACH_ATTRIBUTE(X)\
-    X(alias)
+    X(alias)\
+    X(ffi)
 
 fenum (TokenTag, U64) {
     #define X(VAL, TAG, ...) TAG = VAL,
