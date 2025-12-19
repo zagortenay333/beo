@@ -1,4 +1,39 @@
 fn main {
+    // {
+    //     fn foo (x: ?$T) { }
+    //     foo(42);
+    // }
+}
+
+/*
+fn main {
+    test_var_defs();
+    test_fn_calls();
+    test_typeof();
+    test_type_alias_and_distinct();
+    test_named_call_args();
+    test_default_fn_args();
+    test_some_builtins();
+    test_defer();
+    test_ifs();
+    test_enums();
+    test_records();
+    test_tuples();
+    test_option_types();
+    test_while();
+    test_polymorphism();
+    register_stress_test();
+}
+
+fn test_start (fn_name: String) {
+    .print("--------------------------------------------");
+    .print(fn_name);
+    .print("--------------------------------------------");
+}
+
+fn test_polymorphism {
+    test_start(.fn_name());
+
     {
         fn add (x: []$T, y: T) {
             .print(x);
@@ -20,12 +55,27 @@ fn main {
         fn foo (x: Foo($T), $R, y: []R) {
             .print(x.y);
             .print(y);
-
-            var z: R = 3.3;
-            .print(z);
         }
 
         foo(x, Float, [42.0, 3.3]);
+        foo(x, String, ["hello", "sailor"]);
+    }
+
+    {
+        record Foo ($T) {
+            x: T;
+            y: []T;
+        }
+
+        var x = Foo(Float){ x = 42.0, y = [1.0, 2.0] };
+        var y = Foo(String){ x = "sailor", y = ["hi", "there"] };
+
+        fn foo ($T, x: Foo(T)) {
+            .print(x);
+        }
+
+        foo(Float, x);
+        foo(String, y);
     }
 
     {
@@ -68,38 +118,11 @@ fn main {
     }
 
     {
-        var x: []?T = [1, 2, nil];
+        var x: []?Int = [1, 2, 3];
+        x[0] = nil;
+        .print(x);
     }
 
-    // {
-    //     fn foo (x: ?$T) { }
-    //     foo(42);
-    // }
-}
-
-/*
-fn main {
-    test_var_defs();
-    test_fn_calls();
-    test_typeof();
-    test_type_alias_and_distinct();
-    test_named_call_args();
-    test_default_fn_args();
-    test_some_builtins();
-    test_defer();
-    test_ifs();
-    test_enums();
-    test_records();
-    test_tuples();
-    test_option_types();
-    test_while();
-    register_stress_test();
-}
-
-fn test_start (fn_name: String) {
-    .print("--------------------------------------------");
-    .print(fn_name);
-    .print("--------------------------------------------");
 }
 
 fn test_type_alias_and_distinct {
