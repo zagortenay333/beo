@@ -2110,7 +2110,7 @@ static Result check_node (Sem *sem, Ast *node) {
         n->path = intern_str(sem->interns, path);
 
         FfiModule *module = array_find_ref(&sem->vm->ffi_modules, str_match(IT->name, path));
-        if (! module) return error_n(sem, node, "Reference to undeclared ffi module.");
+        if (! module) return error_n(sem, n->path_gen, "Reference to undeclared ffi module [%.*s].", STR(path));
 
         scope_add(sem, get_scope(node), n->name, node, node);
 

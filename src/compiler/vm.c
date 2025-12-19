@@ -449,7 +449,7 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
             U32 fn_idx = get_fn_from_ast(em->vm, cast(AstFn*, def));
             emit_bytes(em, VM_OP_CONST_GET, result_reg, ENCODE_U32(fn_idx));
         } else if (def->tag == AST_IMPORT_FFI) {
-            U32 idx = get_ffi_module_idx(em->vm, *cast(AstImportFfi*, def)->name);
+            U32 idx = get_ffi_module_idx(em->vm, *cast(AstImportFfi*, def)->path);
             emit_bytes(em, VM_OP_FFI_GET, result_reg, ENCODE_U32(idx));
         } else if (def->flags & AST_IS_LOCAL_VAR) {
             VmRegOp reg; Bool found = map_get(&em->binds, def->id, &reg);
