@@ -1518,7 +1518,7 @@ static Result match_tv (Sem *sem, Type *t, Ast **v)   { return match(sem, &sem->
 
 static IString *instantiate_poly_name (Sem *sem, IString *base, Ast *instantiator, U64 n) {
     IString *path = get_file(instantiator)->path;
-    String name   = astr_fmt(sem->mem, "%.*s:%.*s:%lu:%lu", STR(*base), STR(*path), instantiator->pos.offset, n);
+    String name   = astr_fmt(sem->mem, "%.*s:%.*s:%lu:%lu", STR(*base), STR(*path), instantiator->pos.first_line, n);
     return intern_str(sem->interns, name);
 }
 

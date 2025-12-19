@@ -881,7 +881,7 @@ Void vm_print (Vm *vm, Bool show_source) {
                 U32 val_idx = read_u32(&cur[2]);
                 FfiModule *module = array_ref(&vm->ffi_modules, val_idx);
                 cur += 6;
-                printf("r%i = ffi<%u: %.*s>\n", result_reg, val_idx, STR(module->name));
+                printf("r%i = ffi_module<%.*s>\n", result_reg, STR(module->name));
             } break;
             }
 

@@ -1,12 +1,12 @@
 fn main {
-    import arr = "std/array.beo";
+    import array = "std/array.beo";
 
     var x = [1, 2, 3];
-    arr.push(x, 4);
+    array.push(x, 4);
     .print(x);
 
-    arr.dummy = 42;
-    .print(arr.dummy);
+    array.dummy = 42;
+    .print(array.dummy);
 }
 
 /*
