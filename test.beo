@@ -1,16 +1,4 @@
 fn main {
-    import array = "std/array.beo";
-
-    var x = [1, 2, 3];
-    array.push(x, 4);
-    .print(x);
-
-    array.dummy = 42;
-    .print(array.dummy);
-}
-
-/*
-fn main {
     test_var_defs();
     test_fn_calls();
     test_typeof();
@@ -108,6 +96,8 @@ fn test_polymorphism {
     }
 
     {
+        import:ffi array = "array";
+
         fn push (x: []$T, y: T) {
             array.push(x, y);
         }
@@ -310,14 +300,14 @@ fn test_var_defs {
 fn test_import {
     test_start(.fn_name());
 
-    import arr = "std/array.beo";
+    import array = "std/array.beo";
 
     var x = [1, 2, 3];
-    arr.push(x, 4);
+    array.push(x, 4);
     .print(x);
 
-    arr.dummy = 42;
-    .print(arr.dummy);
+    array.dummy = 42;
+    .print(array.dummy);
 }
 
 fn test_records {
@@ -928,4 +918,3 @@ fn register_stress_test2 () {
     var x252 = 1;
     [1, 33];
 }
-*/
