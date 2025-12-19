@@ -67,6 +67,10 @@ fn main {
         .print(y);
     }
 
+    {
+        var x: []?T = [1, 2, nil];
+    }
+
     // {
     //     fn foo (x: ?$T) { }
     //     foo(42);
