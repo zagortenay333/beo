@@ -1,8 +1,4 @@
 fn main {
-    {
-        var x: (?Int, ?Float) = (1, nil);
-        .print(x);
-    }
 
     // {
     //     fn foo (x: ?$T) { }
@@ -123,11 +119,27 @@ fn test_polymorphism {
     }
 
     {
+        fn foo (x: Fn ($T), y: T) {
+            x(y);
+        }
+
+        fn bar (x: $T) {
+            .print(x);
+        }
+
+        foo(bar, 33);
+    }
+
+    {
         var x: []?Int = [1, 2, 3];
         x[0] = nil;
         .print(x);
     }
 
+    {
+        var x: (?Int, ?Float) = (1, nil);
+        .print(x);
+    }
 }
 
 fn test_type_alias_and_distinct {

@@ -966,7 +966,7 @@ static Result error_unbound_polyvars (Sem *sem, Ast *caller, Ast *target) {
     astr_push_cstr(msg, "Unable to bind all poly variables.\n\n");
     log_nodes(sem, msg, caller, target);
 
-    astr_push_cstr(msg, "Here are the unbound variables:\n\n");
+    astr_push_cstr(msg, "\nHere are the unbound variables:\n\n");
     array_iter (info, &sem->call_check.mono_infos) {
         array_iter (x, &info->type_map, *)  if (!x->t || is_tvar_type(x->t)) log_node_no_flush(sem, slog, msg, get_type_constructor(cast(Type*, x->var)));
         array_iter (x, &info->value_map, *) if (! x->val) log_node_no_flush(sem, slog, msg, get_type_constructor(cast(Type*, x->var)));
