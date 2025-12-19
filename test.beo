@@ -1,4 +1,9 @@
 fn main {
+    {
+        var x: (?Int, ?Float) = (1, nil);
+        .print(x);
+    }
+
     // {
     //     fn foo (x: ?$T) { }
     //     foo(42);
