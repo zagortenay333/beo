@@ -47,7 +47,7 @@ istruct (Type)        { TypeTag tag; TypeFlags flags; TypeId id; };
 istruct (TypeArray)   { Type type; Ast *node; Type *element; };
 istruct (TypeBool)    { Type type; };
 istruct (TypeEnum)    { Type type; AstEnum *node; };
-istruct (TypeFfi)     { Type type; String name; VmObjRecord *obj; };
+istruct (TypeFfi)     { Type type; FfiModule *ffi_module; };
 istruct (TypeFloat)   { Type type; };
 istruct (TypeFn)      { Type type; AstBaseFn *node; };
 istruct (TypeInt)     { Type type; };

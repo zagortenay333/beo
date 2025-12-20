@@ -773,7 +773,7 @@ static Void log_type (Sem *sem, AString *astr, Type *type) {
     } break;
 
     case TYPE_FFI: {
-        String name = cast(TypeFfi*, type)->name;
+        String name = cast(TypeFfi*, type)->ffi_module->name;
         astr_push_fmt(astr, "ffi %.*s", STR(name));
     } break;
 
@@ -2115,8 +2115,7 @@ static Result check_node (Sem *sem, Ast *node) {
         scope_add(sem, get_scope(node), n->name, node, node);
 
         Type *type = alloc_type(sem, TYPE_FFI);
-        cast(TypeFfi*, type)->name = module->name;
-        cast(TypeFfi*, type)->obj  = module->obj;
+        cast(TypeFfi*, type)->ffi_module = module;
         set_type(node, type);
 
         return RESULT_OK;
@@ -2312,7 +2311,7 @@ static Result check_node (Sem *sem, Ast *node) {
 
         if (t->tag == TYPE_FFI) {
             TypeFfi *ffi = cast(TypeFfi*, t);
-            VmReg reg; Bool found = map_get(&ffi->obj->record, *n->rhs, &reg);
+            VmReg reg; Bool found = map_get(&ffi->ffi_module->obj->record, *n->rhs, &reg);
             if (! found) return error_n(sem, node, "Reference to undeclared ffi function.");
             set_type(node, sem->core_types.type_CFn);
         } else if (t->tag == TYPE_ENUM) {
