@@ -125,14 +125,10 @@ static Void add_reg_bind (Emitter *em, Ast *var_def, VmRegOp reg) {
 
 // Returns index into vm->constants.
 static U32 get_fn_from_ast (Vm *vm, AstFn *ast) {
-    assert_always(vm->constants.count <= UINT32_MAX);
-
-    array_iter (r, &vm->constants, *) {
-        if (r->tag != VM_REG_FN) continue;
-        if (r->fn->ast == ast) return cast(U32, ARRAY_IDX);
-    }
-
-    badpath;
+    U32 idx;
+    Bool found = map_get(&vm->ast_to_fn, cast(Ast*, ast)->id, &idx);
+    assert_always(found);
+    return idx;
 }
 
 // Returns index into vm->globals.
@@ -762,6 +758,8 @@ static Void emit_fn_constant (Vm *vm, AstFn *ast) {
     Auto fn = mem_new(vm->mem, VmFunction);
     fn->ast = ast;
     fn->n_preallocated_regs = 2 + a->inputs.count;
+
+    map_add(&vm->ast_to_fn, cast(Ast*, ast)->id, vm->constants.count);
 
     VmReg reg = { .tag=VM_REG_FN, .fn=fn };
     array_push(&vm->constants, reg);
@@ -1411,9 +1409,11 @@ Vm *vm_new (Mem *mem) {
     array_init(&vm->call_stack, mem);
     array_init(&vm->instructions, mem);
 
+    map_init(&vm->ast_to_fn, mem);
+
     // @todo A better way would be for fn_call/fn_return
     // functions to dynamically adjust this array.
-    array_ensure_count(&vm->registers, 16*1024, true);
+    array_ensure_count(&vm->registers, 16*1024, false);
 
     return vm;
 }

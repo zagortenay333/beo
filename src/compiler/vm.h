@@ -12,6 +12,7 @@ istruct (AstFn);
 istruct (Ast);
 istruct (Vm);
 istruct (VmObj);
+typedef U64 AstId; // Copied from ast.h
 
 #define EACH_VM_OP(X)\
     X(VM_OP_ADD)\
@@ -142,6 +143,7 @@ istruct (Vm) {
     Array(FfiModule) ffi_modules;
 
     Array(Ast*) debug_info; // Index with pc.
+    Map(AstId, U32) ast_to_fn; // Returns index into constants.
 
     ArrayVmReg registers;
     Array(CallRecord) call_stack;
