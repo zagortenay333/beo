@@ -782,7 +782,7 @@ Void vm_compile_prog (Vm *vm, SemProgram *prog) {
 }
 
 Void vm_compile_str (Vm *vm, String main_file_path) {
-    Interns *interns = interns_new(vm->mem, main_file_path);
+    Interns *interns = interns_new(vm->mem);
     Sem *sem         = sem_new(vm->mem, vm, interns);
     SemProgram *prog = sem_check(sem, main_file_path);
     vm_compile_prog(vm, prog);

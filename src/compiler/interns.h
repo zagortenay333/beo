@@ -25,6 +25,6 @@ istruct (Interns) {
     #undef X
 };
 
-Interns *interns_new (Mem *mem, String main_file_path);
+Interns *interns_new (Mem *mem);
 IString *intern_str  (Interns *, String);
 IString *intern_cstr (Interns *, CString);

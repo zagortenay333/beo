@@ -18,7 +18,7 @@ IString *intern_cstr (Interns *interns, CString cstr) {
     return intern_str(interns, str(cstr));
 }
 
-Interns *interns_new (Mem *mem, String main_file_path) {
+Interns *interns_new (Mem *mem) {
     Interns *interns = mem_new(mem, Interns);
 
     interns->mem = mem;
