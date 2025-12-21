@@ -51,7 +51,7 @@ array_typedef(Char, Char);
 array_typedef(CString, CString);
 array_typedef(RangeU64, RangeU64);
 
-#define ARRAY_NIL_IDX UINT32_MAX
+#define ARRAY_NIL_IDX UINT64_MAX
 
 Void   uarray_maybe_decrease_capacity      (UArray *, U64 esize);
 Void   uarray_increase_capacity            (UArray *, U64 esize, U64 n);

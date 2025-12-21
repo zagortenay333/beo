@@ -1486,9 +1486,9 @@ static Result match (Sem *sem, Ast **pn1, Ast **pn2, Type *t1, Type *t2, Subtype
     sem->match.without_error_reporting--;
 
     if (r == RESULT_ERROR) {
-        // swap(sem->call_check.i1, sem->call_check.i2);
+        swap(sem->call_check.i1, sem->call_check.i2);
         r = match_substructural(sem, n2, pn1, t2, t1);
-        // swap(sem->call_check.i1, sem->call_check.i2);
+        swap(sem->call_check.i1, sem->call_check.i2);
     }
 
     done: {
