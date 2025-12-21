@@ -10,9 +10,8 @@
 #include <sanitizer/common_interface_defs.h>
 
 // The 'indent' argument refers to spaces added at each line start.
-// The 'caller_frames_to_skip' arg refers to callers of this func.
-Void push_stack_trace (AString *a, U64 indent, U64 caller_frames_to_skip) {
-    assert_dbg((indent < 128) && (caller_frames_to_skip < 32));
+Void push_stack_trace (AString *a, U64 indent) {
+    assert_dbg(indent < 128);
 
     // We use the libc allocator (CMem) for this array so that
     // __asan_get_alloc_stack can return a stack trace for the
@@ -39,15 +38,15 @@ Void push_stack_trace (AString *a, U64 indent, U64 caller_frames_to_skip) {
     array_free(&frames);
 }
 
-String get_stack_trace (Mem *mem, U64 indent, U64 frames_to_skip) {
+String get_stack_trace (Mem *mem, U64 indent) {
     AString astr = astr_new(mem);
-    push_stack_trace(&astr, indent, frames_to_skip + 1);
+    push_stack_trace(&astr, indent);
     return astr_to_str(&astr);
 }
 
 Void print_stack_trace () {
     tmem_new(tm);
-    String s = get_stack_trace(tm, 4, 1);
+    String s = get_stack_trace(tm, 4);
     printf("%.*s", STR(s));
 }
 
@@ -136,7 +135,7 @@ AString *log_msg_start (LogMsgTag tag, CString user_tag, Bool iterable) {
         .data_offset = data_offset,
         .body_offset = data->count,
         .user_tag    = str(user_tag),
-        IF_BUILD_DEBUG(.trace = get_stack_trace(mem_base(log_data->arena), 4, 1))
+        IF_BUILD_DEBUG(.trace = get_stack_trace(mem_base(log_data->arena), 4))
     );
 
     return data;

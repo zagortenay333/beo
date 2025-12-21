@@ -13,8 +13,8 @@
 // function/file/line string.
 // =============================================================================
 #if BUILD_DEBUG
-    Void    push_stack_trace      (AString *, U64, U64);
-    String  get_stack_trace       (Mem *, U64, U64);
+    Void    push_stack_trace      (AString *, U64);
+    String  get_stack_trace       (Mem *, U64);
     Void    print_stack_trace_fmt Fmt(1, 2) (CString, ...);
     Void    print_stack_trace     ();
 #else
