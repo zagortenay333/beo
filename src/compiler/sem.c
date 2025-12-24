@@ -396,9 +396,7 @@ static Result can_eval (Sem *sem, Ast *node) {
         }
     }
 
-    return (result == RESULT_ERROR) ?
-           error_n(sem, node, "Only expressions with type primitive, string, or array/record of primitive types can eval at compile time.") :
-           result;
+    return result;
 }
 
 static Void collect_program_ (SemProgram *prog, Ast *node) {
