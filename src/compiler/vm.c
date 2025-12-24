@@ -491,6 +491,12 @@ static VmRegOp emit_expression (Emitter *em, Ast *expr, I32 pref) {
         emit_const(em, result_reg, val);
     } break;
 
+    case AST_BUILTIN_PANIC: {
+        Auto n = cast(AstBaseUnary*, expr);
+        VmRegOp expr = emit_expression(em, n->op, result_reg);
+        emit_bytes(em, VM_OP_PANIC, expr);
+    } break;
+
     case AST_BUILTIN_VAL: {
         Auto n = cast(AstBaseUnary*, expr);
         emit_expression(em, n->op, result_reg);
@@ -845,6 +851,7 @@ Void vm_print (Vm *vm, Bool show_source) {
             case VM_OP_IS_NIL:        printf("r%u = is_nil r%u\n", cur[2], cur[1]); cur += 3; break;
             case VM_OP_RETURN:        printf("return\n"); cur++; break;
             case VM_OP_MOVE:          printf("r%u = r%u\n", cur[1], cur[2]); cur += 3; break;
+            case VM_OP_PANIC:         printf(".panic(r%u)\n", cur[1]); cur += 2; break;
             case VM_OP_ARRAY_NEW:     printf("r%u = array_new\n", cur[1]); cur += 2; break;
             case VM_OP_ARRAY_PUSH:    printf("array_push r%u r%u\n", cur[1], cur[2]); cur += 3; break;
             case VM_OP_ARRAY_GET:     printf("r%u = array_get r%u r%u\n", cur[3], cur[1], cur[2]); cur += 4; break;
@@ -1360,6 +1367,19 @@ Bool vm_run (Vm *vm) {
             cr = array_ref_last(&vm->call_stack);
             cr->pc += 2; // Advance past call instruction. See comment in call handling code.
         } break;
+
+        case VM_OP_PANIC: {
+            tmem_new(tm);
+            String trace = stack_trace(vm, tm);
+
+            VmReg *reg = get_reg(vm, cr, pc[1]);
+            assert_obj(reg, VM_OBJ_STRING);
+            String msg = cast(VmObjString*, reg->obj)->string;
+
+            printf(TERM_RED("PANIC: ") "%.*s\n%.*s\n", STR(msg), STR(trace));
+
+            return false;
+        }
 
         case VM_OP_MOVE: {
             VmReg *to   = get_reg(vm, cr, pc[1]);

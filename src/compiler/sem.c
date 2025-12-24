@@ -2073,6 +2073,12 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_BUILTIN_PANIC: {
+        Auto n = cast(AstBaseUnary*, node);
+        match_tv(sem, sem->core_types.type_String, &n->op);
+        return RESULT_OK;
+    }
+
     case AST_BUILTIN_ASSERT: {
         Auto n = cast(AstBaseUnary*, node);
 

@@ -103,6 +103,7 @@ istruct (Interns);
     X(is_nil)\
     X(line)\
     X(nan)\
+    X(panic)\
     X(print)\
     X(stack_trace)\
     X(val)

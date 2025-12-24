@@ -217,6 +217,7 @@ fn test_some_builtins {
     .print(.line());
     .print(.file());
     .print(.stack_trace());
+    // .panic("This is a panic.");
 }
 
 fn test_default_fn_args {

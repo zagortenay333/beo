@@ -43,6 +43,7 @@ typedef U64 AstId; // Copied from ast.h
     X(VM_OP_NOP)\
     X(VM_OP_NOT)\
     X(VM_OP_NOT_EQUAL)\
+    X(VM_OP_PANIC)\
     X(VM_OP_PRINT)\
     X(VM_OP_RECORD_GET)\
     X(VM_OP_RECORD_NEW)\
