@@ -38,7 +38,8 @@ fn test_static_assert {
         return foo(42) + 1;
     }
 
-    .assert(foo(42) + 2 == bar());
+    .print(bar());
+    .assert(foo(41) + 2 == bar());
 }
 
 fn test_polymorphism {
