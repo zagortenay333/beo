@@ -30,15 +30,15 @@ fn test_static_assert {
 
     .assert(1 < 2);
 
-    fn foo () -> Int {
-        return 42;
+    fn foo (x: Int) -> Int {
+        return x + 1;
     }
 
-    fn bar () -> Int {
-        return foo() + 1;
+    fn bar -> Int {
+        return foo(42) + 1;
     }
 
-    .assert(foo() + 1 == bar());
+    .assert(foo(42) + 2 == bar());
 }
 
 fn test_polymorphism {
