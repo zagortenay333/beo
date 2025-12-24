@@ -1,4 +1,5 @@
 fn main {
+    test_static_assert();
     test_var_defs();
     test_fn_calls();
     test_typeof();
@@ -22,6 +23,22 @@ fn test_start (fn_name: String) {
     .print("--------------------------------------------");
     .print(fn_name);
     .print("--------------------------------------------");
+}
+
+fn test_static_assert {
+    test_start(.fn_name());
+
+    .assert(1 < 2);
+
+    fn foo () -> Int {
+        return 42;
+    }
+
+    fn bar () -> Int {
+        return foo() + 1;
+    }
+
+    .assert(foo() + 1 == bar());
 }
 
 fn test_polymorphism {

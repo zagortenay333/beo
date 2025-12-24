@@ -901,6 +901,17 @@ static Ast *parse_builtin_stack_trace (Parser *par) {
     return complete_node(par, node);
 }
 
+static Ast *parse_builtin_assert (Parser *par) {
+    Auto node = make_node(par, AstBuiltinAssert);
+    lex_eat_this(lex, '.');
+    lex_eat_this(lex, TOKEN_IDENT);
+    lex_eat_this(lex, '(');
+    cast(AstBaseUnary*, node)->op = parse_expression(par, 0);
+    cast(AstBaseUnary*, node)->op->flags |= AST_MUST_EVAL;
+    lex_eat_this(lex, ')');
+    return complete_node(par, node);
+}
+
 static Ast *parse_builtin_call (Parser *par) {
     Token *token = lex_peek_nth(lex, 2);
 
@@ -913,6 +924,7 @@ static Ast *parse_builtin_call (Parser *par) {
     if (token->str == par->interns->builtin_fn_name) return parse_builtin_fn_name(par);
     if (token->str == par->interns->builtin_file) return parse_builtin_file(par);
     if (token->str == par->interns->builtin_line) return parse_builtin_line(par);
+    if (token->str == par->interns->builtin_assert) return parse_builtin_assert(par);
     if (token->str == par->interns->builtin_stack_trace) return parse_builtin_stack_trace(par);
 
     par_error(par, "Unknown builtin.");

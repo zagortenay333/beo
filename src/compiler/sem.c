@@ -2075,6 +2075,18 @@ static Result check_node (Sem *sem, Ast *node) {
         return RESULT_OK;
     }
 
+    case AST_BUILTIN_ASSERT: {
+        Auto n = cast(AstBaseUnary*, node);
+
+        match_tv(sem, sem->core_types.type_Bool, &n->op);
+        if (! (n->op->flags & AST_EVALED)) return RESULT_DEFER;
+
+        Bool result = sem_get_const_val(sem, n->op).boolean;
+        if (! result) return error_n(sem, node, "Static assert failed.");
+
+        return RESULT_OK;
+    }
+
     case AST_BUILTIN_STACK_TRACE: {
         Scope *fn_scope = sem_scope_get_ancestor(get_scope(node), AST_FN);
         if (! fn_scope) return error_n(sem, node, "The builtin .stack_trace() must appear inside a function.");

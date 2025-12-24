@@ -33,6 +33,7 @@ istruct (Interns);
     X(AST_BLOCK, AstBlock, 0, AST_CREATES_SCOPE)\
     X(AST_BOOL_LITERAL, AstBoolLiteral, 0, AST_IS_LITERAL)\
     X(AST_BREAK, AstBreak, 0, 0)\
+    X(AST_BUILTIN_ASSERT, AstBuiltinAssert, AST_BASE_UNARY, 0)\
     X(AST_BUILTIN_FILE, AstBuiltinFile, 0, AST_MUST_EVAL)\
     X(AST_BUILTIN_FN_NAME, AstBuiltinFnName, 0, AST_MUST_EVAL)\
     X(AST_BUILTIN_IS_NIL, AstBuiltinIsNil, AST_BASE_UNARY, 0)\
@@ -198,6 +199,7 @@ istruct (AstAssign)            { AstBaseBinary base; AstTag fused_op /* AST_ASSI
 istruct (AstBlock)             { Ast base; ArrayAst statements; };
 istruct (AstBoolLiteral)       { Ast base; Bool val; };
 istruct (AstBreak)             { Ast base; IString *label; Ast *sem_edge; };
+istruct (AstBuiltinAssert)     { AstBaseUnary base; };
 istruct (AstBuiltinFile)       { Ast base; };
 istruct (AstBuiltinFnName)     { Ast base; };
 istruct (AstBuiltinIsNil)      { AstBaseUnary base; };

@@ -96,6 +96,7 @@ istruct (Interns);
 // These are builtin functions that can be invoked via
 // the prefix dot operator like .line().
 #define EACH_BUILTIN(X)\
+    X(assert)\
     X(file)\
     X(fn_name)\
     X(inf)\
